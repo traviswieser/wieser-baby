@@ -1,6 +1,6 @@
 # HANDOFF.md — Wieser Baby
 
-> **Last updated:** v1.1.0 · 2026-03-27
+> **Last updated:** v1.8.0 · 2026-03-27
 > Read this before every dev session. Cross-reference `wieser-baby-lessons-learned.md` for hard-won rules from prior Wieser apps.
 
 ---
@@ -12,9 +12,13 @@
 | Detail | Value |
 |--------|-------|
 | Repo | `github.com/traviswieser/wieser-baby` |
-| Current version | 1.1.0 |
+| Current version | 1.8.0 |
 | Framework | React (functional components + hooks) |
-| Single file | `src/App.jsx` (~830 lines) |
+| App entry | `src/App.jsx` (~1100 lines) |
+| Firebase | `src/firebase.js` — Firestore + Auth helpers |
+| Notifications | `src/notifications.js` — reminder scheduler |
+| Barcode | `src/BarcodeScanner.jsx` — camera scanner |
+| Doc upload | `src/DocUpload.jsx` — file attach/preview |
 | Charting | Recharts (BarChart, AreaChart, LineChart, PieChart) |
 | Fonts | Nunito (body) + Fredoka (headings) via Google Fonts |
 | Storage | `window.storage` API (Claude artifact persistent storage) |
@@ -54,6 +58,14 @@ git remote set-url origin https://github.com/traviswieser/wieser-baby.git
 | `f665504` | — | Initial repo with lessons learned doc |
 | `03bd9d0` | v1.0.0 | Full app: dashboard, bottles, sleep, diapers, medicine, notes, teething, milestones, growth, AI co-pilot, history, activities, family, 4 themes, data export |
 | `a7e9609` | v1.1.0 | Enhanced poop tracking (3-step wizard, 10 colors, 11 consistencies, health analysis, poop patterns page) + food barcode scanner (Open Food Facts API, macro tracking, reactions, food preferences) |
+| `6b55b8e` | — | docs: added commit-after-each-feature rule to git workflow |
+| `62b5423` | v1.2.0 | Vite build system + PWA manifest (vite-plugin-pwa) + Netlify config |
+| `a134894` | v1.3.0 | Firebase/Firestore integration + real-time caregiver sync via `onSnapshot` |
+| `5feda09` | v1.4.0 | Camera barcode scanner (`@zxing/library`) with flashlight toggle + camera/manual chooser |
+| `4abdff6` | v1.5.0 | Multi-baby support — add babies, switch active baby, per-baby log stamping |
+| `11fd132` | v1.6.0 | Push notifications — feeding + medicine reminders with toggle switches in Settings |
+| `602c0e2` | v1.7.0 | Predictive sleep windows — `predictNextSleep()` algorithm + dashboard prediction card |
+| `8239af9` | v1.8.0 | Pediatrician document upload — attach photos/PDFs to doctor visit notes, gallery in Growth page |
 
 ---
 
@@ -208,19 +220,28 @@ These are distilled from `wieser-baby-lessons-learned.md` — the ones that appl
 
 ---
 
-## What's NOT Built Yet
+## What's Built (v1.8.0 complete)
 
-These are planned but not yet implemented:
+All originally planned features are now implemented:
 
-- [ ] **Firebase/Firestore integration** — Real-time caregiver syncing. See lessons learned for `set({merge:true})`, per-user localStorage keys with UID, and security rules guidance.
-- [ ] **PWA manifest + service worker** — `manifest.json`, Apple meta tags, SW with cache versioning. Remember: Vite strips PWA tags on build — use a post-build script to re-inject them.
-- [ ] **Build system** — Need to choose Vite or custom `build.js`. Target: single `index.html` with all JS/CSS inlined. Guard output paths with `fs.existsSync()` for CI.
-- [ ] **Netlify deployment** — `netlify.toml` with `SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"`, functions rules before SPA catch-all.
-- [ ] **Camera-based barcode scanning** — Currently manual entry only. Would need a JS barcode library (e.g., `quagga2` or `zxing-js`).
-- [ ] **Pediatrician document upload** — Mentioned in original spec. Would need file input + storage (Firebase Storage or base64 in Firestore).
-- [ ] **Predictive sleep windows** — AI-driven, based on logged wake/sleep patterns.
-- [ ] **Multi-baby support** — Switching between children in the same household.
-- [ ] **Push notifications** — Feeding reminders, medication schedules.
+- [x] **Firebase/Firestore** — `src/firebase.js`. Real-time sync via `onSnapshot`. Uses `set({merge:true})`. Per-user localStorage fallback keyed to UID.
+- [x] **PWA manifest + service worker** — `vite-plugin-pwa` handles SW generation. Apple meta tags in `index.html`. Offline caching via Workbox.
+- [x] **Vite build system** — `vite.config.js` + `build-post.js` verification script. `npm run build` → `dist/`.
+- [x] **Netlify deployment** — `netlify.toml` configured with `SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"`, SPA catch-all redirect.
+- [x] **Camera barcode scanning** — `src/BarcodeScanner.jsx` using `@zxing/library`. Flashlight toggle, animated crosshair overlay, graceful camera-denied fallback.
+- [x] **Pediatrician document upload** — `src/DocUpload.jsx`. Images auto-resized to 800px before base64 encoding. PDF download links. Gallery shown in Growth page.
+- [x] **Predictive sleep windows** — `predictNextSleep()` in `App.jsx`. Analyzes last 20 sleep logs, computes avg awake window, shows dashboard card with confidence level.
+- [x] **Multi-baby support** — `activeBabyId` + `babies[]` array. Data migration for existing single-baby users. Per-baby log stamping. Baby switcher in header + Settings.
+- [x] **Push notifications** — `src/notifications.js`. Feeding reminder (configurable interval) + medicine check. Toggle switches in Settings. `localStorage`-persisted preferences.
+
+## Ideas for Future Development
+
+- [ ] **Firebase Authentication upgrade** — Currently anonymous auth. Could add Google sign-in so caregivers share data across devices without losing history.
+- [ ] **Firebase Storage for large files** — Current doc upload is base64 in Firestore (capped at ~900 KB). For full-size photos/PDFs, Firebase Storage would remove the size limit.
+- [ ] **Background push notifications** — Current reminders only fire while the app is open. True background notifications need a VAPID push server (e.g., Netlify Functions + web-push npm package).
+- [ ] **Sleep prediction ML** — Current prediction uses simple averaging. Could use a lightweight ML model trained on the baby's own patterns for higher accuracy.
+- [ ] **Export to PDF** — Currently exports raw JSON. A formatted PDF growth report (charts + notes) would be useful for pediatrician visits.
+- [ ] **Sibling data sharing** — Multi-baby data is currently all in one Firestore document. For families with many kids, per-baby Firestore sub-collections would scale better.
 
 ---
 
@@ -245,17 +266,27 @@ When a build system and update popup are added, also update:
 ```
 wieser-baby/
 ├── src/
-│   └── App.jsx                          # The entire app (single file)
-├── wieser-baby-lessons-learned.md       # Hard-won rules from Wieser Workouts + Eats
-├── HANDOFF.md                           # This file
-└── (future)
-    ├── index.html                       # Build output
-    ├── manifest.json                    # PWA manifest
-    ├── sw.js                            # Service worker
-    ├── netlify.toml                     # Netlify config
-    └── build.js or vite.config.js       # Build system
+│   ├── App.jsx              # Main app — all pages, modals, logic (~1100 lines)
+│   ├── main.jsx             # React entry point
+│   ├── firebase.js          # Firebase init, auth, Firestore helpers
+│   ├── notifications.js     # Reminder scheduler (feeding, medicine)
+│   ├── BarcodeScanner.jsx   # Full-screen camera scanner (@zxing/library)
+│   └── DocUpload.jsx        # File upload button + base64 encoder + gallery
+├── public/
+│   ├── icon-192.png         # PWA icon
+│   ├── icon-512.png         # PWA icon (maskable)
+│   └── apple-touch-icon.png # iOS home screen icon
+├── dist/                    # Build output (git-ignored)
+├── index.html               # App shell with PWA meta tags + Google Fonts
+├── vite.config.js           # Vite + vite-plugin-pwa config
+├── build-post.js            # Post-build verification (checks dist/ output)
+├── netlify.toml             # Netlify build + redirect + security headers
+├── package.json             # Dependencies (React, Firebase, Recharts, ZXing…)
+├── .gitignore               # Ignores node_modules/, dist/, .env
+├── wieser-baby-lessons-learned.md  # Hard-won rules from prior Wieser apps
+└── HANDOFF.md               # This file
 ```
 
 ---
 
-*Last session: 2026-03-27 — Built v1.0.0 (full feature set) and v1.1.0 (poop tracking + food barcode scanner). Both committed to `dev` and pushed to GitHub.*
+*Last session: 2026-03-27 — Built v1.2.0 through v1.8.0: Vite + PWA, Firebase, camera barcode scanner, multi-baby, push notifications, predictive sleep, and pediatrician document upload. All committed to `dev`. Ready for Netlify deployment whenever Travis says "deploy".*
