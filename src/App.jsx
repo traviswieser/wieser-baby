@@ -3,6 +3,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData } from "./firebase.js";
 import BarcodeScanner from "./BarcodeScanner.jsx";
 import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders } from "./notifications.js";
+import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
 
 // ─── Constants & Config ───────────────────────────────────────
 const APP_VERSION = "1.3.0";
@@ -920,8 +921,42 @@ function TeethingModal({ theme, addLog, todayStr, now }) {
   return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🦷 Teething</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>{["Bottom center L","Bottom center R","Top center L","Top center R","Bottom lateral L","Bottom lateral R","Top lateral L","Top lateral R","1st molar","Canine","2nd molar"].map(t => (<button key={t} onClick={() => setTooth(t)} style={{ background: tooth === t ? theme.accentSoft : theme.bg, border: `1px solid ${tooth === t ? theme.accent : theme.border}`, borderRadius: 12, padding: "6px 12px", color: tooth === t ? theme.accent : theme.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{t}</button>))}</div><input placeholder="Symptoms" value={sym} onChange={e => setSym(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 16 }} /><button onClick={() => tooth && addLog({ type: "teething", tooth, symptoms: sym, date: todayStr, time: localTimeStr(now) })} disabled={!tooth} style={{ width: "100%", padding: 16, borderRadius: 16, background: tooth ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: tooth ? "pointer" : "default" }}>Log</button></div>);
 }
 function DoctorModal({ theme, data, updateData, showToast }) {
-  const [n, setN] = useState(""); const [w, setW] = useState(""); const [h, setH] = useState(""); const [d, setD] = useState(localDateStr());
-  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🩺 Doctor Visit</h2><input type="date" value={d} onChange={e => setD(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 10 }} /><div style={{ display: "flex", gap: 8, marginBottom: 10 }}><input placeholder="Weight (lbs)" type="number" step="0.1" value={w} onChange={e => setW(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /><input placeholder="Height (in)" type="number" step="0.1" value={h} onChange={e => setH(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /></div><textarea placeholder="Notes, vaccines, concerns..." value={n} onChange={e => setN(e.target.value)} rows={4} style={{ ...inputStyle(theme), resize: "none", marginBottom: 16 }} /><button onClick={() => { updateData("pediatricianNotes", [...(data.pediatricianNotes || []), { id: uid(), date: d, weight: w ? parseFloat(w) : null, height: h ? parseFloat(h) : null, note: n, timestamp: new Date().toISOString() }]); if (w || h) updateData("growthRecords", [...(data.growthRecords || []), { id: uid(), date: d, weight: w ? parseFloat(w) : null, height: h ? parseFloat(h) : null, source: "doctor" }]); showToast("🩺 Saved!"); }} style={{ width: "100%", padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>Save</button></div>);
+  const [d, setD]     = useState(localDateStr());
+  const [w, setW]     = useState("");
+  const [h, setH]     = useState("");
+  const [n, setN]     = useState("");
+  const [docs, setDocs] = useState([]);
+
+  const handleSave = () => {
+    const record = {
+      id: uid(), date: d,
+      weight: w ? parseFloat(w) : null,
+      height: h ? parseFloat(h) : null,
+      note: n, docs,
+      timestamp: new Date().toISOString(),
+    };
+    updateData("pediatricianNotes", [...(data.pediatricianNotes || []), record]);
+    if (w || h) updateData("growthRecords", [...(data.growthRecords || []), { id: uid(), date: d, weight: w ? parseFloat(w) : null, height: h ? parseFloat(h) : null, source: "doctor" }]);
+    showToast("🩺 Saved!");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, textAlign: "center" }}>🩺 Doctor Visit</h2>
+      <input type="date" value={d} onChange={e => setD(e.target.value)} style={inputStyle(theme)} />
+      <div style={{ display: "flex", gap: 8 }}>
+        <input placeholder="Weight (lbs)" type="number" step="0.1" value={w} onChange={e => setW(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
+        <input placeholder="Height (in)"  type="number" step="0.1" value={h} onChange={e => setH(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
+      </div>
+      <textarea placeholder="Notes, vaccines, concerns..." value={n} onChange={e => setN(e.target.value)} rows={3} style={{ ...inputStyle(theme), resize: "none" }} />
+      <div>
+        <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, fontWeight: 700 }}>ATTACHMENTS</p>
+        <DocUploadButton theme={theme} onFilesReady={(files) => setDocs(prev => [...prev, ...files])} />
+        <DocGallery docs={docs} theme={theme} onDelete={(idx) => setDocs(prev => prev.filter((_, i) => i !== idx))} />
+      </div>
+      <button onClick={handleSave} style={{ padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>Save Visit</button>
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -977,6 +1012,28 @@ function GrowthPage({ data, updateData, theme, showToast, navigateBack }) {
     {sf && <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, marginBottom: 16, animation: "fadeIn 0.2s" }}><input type="date" value={d} onChange={e => setD(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 10 }} /><div style={{ display: "flex", gap: 8, marginBottom: 12 }}><input placeholder="Weight lbs" type="number" step="0.1" value={w} onChange={e => setW(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /><input placeholder="Height in" type="number" step="0.1" value={h} onChange={e => setH(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /><input placeholder="Head in" type="number" step="0.1" value={hd} onChange={e => setHd(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /></div><button onClick={add} style={{ width: "100%", padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, border: "none", cursor: "pointer" }}>Save</button></div>}
     {cd.length > 1 && <div style={{ background: theme.card, borderRadius: 20, padding: "16px 8px 8px 0", border: `1px solid ${theme.border}`, marginBottom: 16 }}><ResponsiveContainer width="100%" height={160}><LineChart data={cd}><CartesianGrid strokeDasharray="3 3" stroke={theme.border} /><XAxis dataKey="date" tick={{ fill: theme.textMuted, fontSize: 10 }} axisLine={false} /><YAxis tick={{ fill: theme.textMuted, fontSize: 11 }} axisLine={false} width={35} /><Tooltip contentStyle={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, color: theme.text }} /><Line type="monotone" dataKey="weight" stroke={theme.accent} strokeWidth={3} dot={{ fill: theme.accent, r: 4 }} /></LineChart></ResponsiveContainer></div>}
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{[...recs].reverse().map(r => (<div key={r.id} className="card" style={{ background: theme.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 13, fontWeight: 700 }}>{r.date}</span><div style={{ display: "flex", gap: 16, fontSize: 13 }}>{r.weight && <span style={{ color: theme.accent }}>{r.weight} lbs</span>}{r.height && <span style={{ color: theme.info }}>{r.height} in</span>}{r.head && <span style={{ color: theme.purple }}>{r.head} in</span>}{r.source === "doctor" && <span>🩺</span>}</div></div>))}{recs.length === 0 && <p style={{ color: theme.textMuted, fontSize: 14, textAlign: "center", padding: 30 }}>No records yet.</p>}</div>
+
+    {(data.pediatricianNotes || []).length > 0 && (
+      <div style={{ marginTop: 20 }}>
+        <SectionLabel theme={theme}>Doctor Visit Notes & Files</SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[...(data.pediatricianNotes || [])].reverse().map(note => (
+            <div key={note.id} style={{ background: theme.card, borderRadius: 16, padding: 16, border: `1px solid ${theme.border}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: theme.accent }}>🩺 {note.date}</span>
+                {(note.weight || note.height) && (
+                  <span style={{ fontSize: 12, color: theme.textMuted }}>
+                    {note.weight ? `${note.weight} lbs ` : ""}{note.height ? `· ${note.height} in` : ""}
+                  </span>
+                )}
+              </div>
+              {note.note && <p style={{ fontSize: 13, color: theme.text, lineHeight: 1.5, marginBottom: 8 }}>{note.note}</p>}
+              {(note.docs || []).length > 0 && <DocGallery docs={note.docs} theme={theme} />}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
   </div>);
 }
 
