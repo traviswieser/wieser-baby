@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
 import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData } from "./firebase.js";
 import BarcodeScanner from "./BarcodeScanner.jsx";
+import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders } from "./notifications.js";
 
 // ─── Constants & Config ───────────────────────────────────────
 const APP_VERSION = "1.3.0";
@@ -122,6 +123,12 @@ const filterForBaby = (d, babyId) => ({
   sleepState:    d.sleepStates?.[babyId] ?? d.sleepState ?? null,
 });
 
+const DEFAULT_REMINDERS = {
+  feedingEnabled: false,
+  feedingMins: 180,     // 3 hours
+  medicineEnabled: false,
+};
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
@@ -133,6 +140,11 @@ export default function WieserBabyApp() {
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
   const [now, setNow] = useState(new Date());
+  const [reminders, setReminders] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("wieser-baby-reminders") || "null") || DEFAULT_REMINDERS; }
+    catch { return DEFAULT_REMINDERS; }
+  });
+  const [notifPermission, setNotifPermission] = useState(getNotificationPermission);
 
   const theme = data?.settings?.theme ? THEMES[data.settings.theme] : THEMES.midnight;
 
@@ -176,6 +188,15 @@ export default function WieserBabyApp() {
   const navigateBack = useCallback(() => { setPageHistory(h => { const n = [...h]; const prev = n.pop() || "dashboard"; setPage(prev); return n; }); }, []);
   useEffect(() => { const handler = (e) => { e.preventDefault(); navigateBack(); }; window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, [navigateBack]);
 
+  // Sync reminders whenever settings change
+  useEffect(() => {
+    localStorage.setItem("wieser-baby-reminders", JSON.stringify(reminders));
+    if (data) syncReminders(data, reminders);
+  }, [reminders, data]);
+
+  // Cleanup all reminders on unmount
+  useEffect(() => () => cancelAllReminders(), []);
+
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
   const addLog = (log) => {
     setData(d => ({ ...d, logs: [...d.logs, { ...log, id: uid(), babyId: d.activeBabyId || "baby_1", timestamp: new Date().toISOString() }] }));
@@ -194,7 +215,7 @@ export default function WieserBabyApp() {
 
   const todayStr = localDateStr(now);
   const todayLogs = data.logs.filter(l => l.date === todayStr);
-  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby };
+  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission };
 
   return (
     <>
@@ -893,7 +914,7 @@ function CoPilotPage({ data, theme, updateData, showToast }) {
   </div>);
 }
 
-function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal }) {
+function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission }) {
   const s = data.settings || {}, b = activeBaby || data.baby || DEFAULT_BABY;
   const us = (k, v) => updateData("settings", { ...s, [k]: v });
   const ub = (k, v) => {
@@ -925,6 +946,43 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Theme</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{Object.entries(THEMES).map(([k, t]) => (<button key={k} className="card" onClick={() => us("theme", k)} style={{ background: t.bg, border: `2px solid ${s.theme === k ? t.accent : t.border}`, borderRadius: 16, padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 24, height: 24, borderRadius: 8, background: t.accent }} /><span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{t.name}</span>{s.theme === k && <span>✓</span>}</button>))}</div></div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>AI Provider (BYOK)</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>{[{id:"groq",l:"Groq (Free)"},{id:"openai",l:"💲 OpenAI"},{id:"anthropic",l:"💲 Claude"},{id:"gemini",l:"💲 Gemini"}].map(p => (<button key={p.id} className="card" onClick={() => us("aiProvider", p.id)} style={{ background: s.aiProvider === p.id ? theme.accentSoft : theme.bg, border: `1px solid ${s.aiProvider === p.id ? theme.accent : theme.border}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", color: s.aiProvider === p.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>{p.l}</button>))}</div><input type="password" placeholder="API Key" value={s.aiKey || ""} onChange={e => us("aiKey", e.target.value)} style={inputStyle(theme)} /><p style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>{s.aiProvider === "groq" ? "Free at console.groq.com/keys" : "Paid API key required."}</p></div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{[{p:"growth",i:"📏",l:"Growth"},{p:"activities",i:"🎯",l:"Activities"},{p:"pooplog",i:"💩",l:"Poop Log"},{p:"family",i:"👨‍👩‍👦",l:"Family"}].map(x => (<button key={x.p} className="log-btn" onClick={() => navigate(x.p)} style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, cursor: "pointer", textAlign: "center" }}><span style={{ fontSize: 22 }}>{x.i}</span><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{x.l}</div></button>))}</div>
+    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+      <SectionLabel theme={theme}>Notifications</SectionLabel>
+      {notifPermission === "unsupported" && <p style={{ fontSize: 13, color: theme.textMuted }}>Notifications aren't supported in this browser.</p>}
+      {notifPermission !== "unsupported" && notifPermission !== "granted" && (
+        <button onClick={async () => { const r = await requestNotificationPermission(); setNotifPermission(r); }} style={{ width: "100%", padding: 12, borderRadius: 12, background: theme.accentSoft, border: `1px solid ${theme.accent}`, color: theme.accent, fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 12 }}>
+          🔔 Enable Notifications
+        </button>
+      )}
+      {notifPermission === "granted" && (
+        <p style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 12 }}>✓ Notifications enabled</p>
+      )}
+      {[
+        { key: "feedingEnabled", label: "Feeding Reminder", icon: "🍼", sub: "Remind me to feed baby" },
+        { key: "medicineEnabled", label: "Medicine Check", icon: "💊", sub: "Hourly medicine reminder" },
+      ].map(({ key, label, icon, sub }) => (
+        <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
+          <div><div style={{ fontSize: 14, fontWeight: 700 }}>{icon} {label}</div><div style={{ fontSize: 12, color: theme.textMuted }}>{sub}</div></div>
+          <button onClick={() => setReminders(r => ({ ...r, [key]: !r[key] }))}
+            style={{ width: 48, height: 28, borderRadius: 14, background: reminders[key] ? theme.accent : theme.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+            <span style={{ position: "absolute", top: 3, left: reminders[key] ? 22 : 4, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
+          </button>
+        </div>
+      ))}
+      {reminders.feedingEnabled && (
+        <div>
+          <label style={{ fontSize: 12, color: theme.textMuted, fontWeight: 700 }}>REMIND EVERY</label>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            {[[60,"1 hr"],[120,"2 hr"],[180,"3 hr"],[240,"4 hr"]].map(([mins, lbl]) => (
+              <button key={mins} onClick={() => setReminders(r => ({ ...r, feedingMins: mins }))}
+                style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: reminders.feedingMins === mins ? theme.accentSoft : theme.card, border: `1px solid ${reminders.feedingMins === mins ? theme.accent : theme.border}`, color: reminders.feedingMins === mins ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Data</SectionLabel><div style={{ display: "flex", gap: 10 }}><button onClick={() => { const bl = new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const u = URL.createObjectURL(bl); const a = document.createElement("a"); a.href = u; a.download = `wieser-baby-${localDateStr()}.json`; a.click(); URL.revokeObjectURL(u); showToast("Downloaded!"); }} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>📦 Export</button><button onClick={() => { if (window.confirm("Clear ALL data?")) { updateData("logs",[]); updateData("milestones",{}); updateData("growthRecords",[]); updateData("familyUpdates",[]); updateData("pediatricianNotes",[]); updateData("foodPreferences",{likes:[],dislikes:[]}); showToast("Cleared"); } }} style={{ flex: 1, padding: 14, borderRadius: 14, background: "rgba(229,115,115,0.1)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🗑️ Clear</button></div></div>
     <div style={{ textAlign: "center", padding: 20, color: theme.textMuted }}><p style={{ fontFamily: "'Fredoka'", fontSize: 16 }}><span style={{ color: theme.accent }}>Wieser</span> Baby</p><p style={{ fontSize: 12, marginTop: 4 }}>v{APP_VERSION}</p></div>
   </div>);
