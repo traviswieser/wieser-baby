@@ -91,11 +91,36 @@ const loadData = async () => { try { const uid = await getUid(); return await lo
 const saveData = async (data) => { try { const uid = await getUid(); await saveUserData(uid, data); } catch (e) { console.error("Save failed:", e); } };
 
 const DEFAULT_DATA = {
-  baby: { ...DEFAULT_BABY }, logs: [], milestones: {}, growthRecords: [],
+  // Multi-baby: activeBabyId points to one entry in babies[]
+  // Legacy single-baby data is migrated on first load (see migrateData below)
+  activeBabyId: "baby_1",
+  babies: [{ id: "baby_1", ...DEFAULT_BABY }],
+  baby: { ...DEFAULT_BABY },  // kept for backward compat — mirrors active baby
+  logs: [], milestones: {}, growthRecords: [],
   settings: { theme: "midnight", aiProvider: "groq", aiKey: "", familyMembers: [] },
   familyUpdates: [], sleepState: null, pediatricianNotes: [],
   foodPreferences: { likes: [], dislikes: [] },
 };
+
+// Migrate old single-baby data to multi-baby format
+const migrateData = (d) => {
+  if (!d) return d;
+  if (!d.babies) {
+    const babyId = "baby_1";
+    return { ...d, activeBabyId: babyId, babies: [{ id: babyId, ...(d.baby || DEFAULT_BABY) }] };
+  }
+  return d;
+};
+
+// Return only the logs / records belonging to the active baby
+const filterForBaby = (d, babyId) => ({
+  ...d,
+  logs:          (d.logs          || []).filter(l => !l.babyId || l.babyId === babyId),
+  growthRecords: (d.growthRecords || []).filter(r => !r.babyId || r.babyId === babyId),
+  milestones:    Object.fromEntries(Object.entries(d.milestones || {}).filter(([k]) => !k.startsWith("b:") || k.startsWith(`b:${babyId}:`))),
+  foodPreferences: (d.foodPreferences?.[babyId]) || (d.foodPreferences?.likes ? d.foodPreferences : { likes: [], dislikes: [] }),
+  sleepState:    d.sleepStates?.[babyId] ?? d.sleepState ?? null,
+});
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
@@ -111,14 +136,26 @@ export default function WieserBabyApp() {
 
   const theme = data?.settings?.theme ? THEMES[data.settings.theme] : THEMES.midnight;
 
+  // Multi-baby helpers
+  const activeBabyId = data?.activeBabyId || "baby_1";
+  const activeBaby   = data?.babies?.find(b => b.id === activeBabyId) || data?.baby || DEFAULT_BABY;
+  const switchBaby   = (babyId) => setData(d => ({ ...d, activeBabyId: babyId, baby: d.babies.find(b => b.id === babyId) || DEFAULT_BABY }));
+  const addBaby      = (name, birthDate) => {
+    const newId = "baby_" + uid();
+    const newBaby = { id: newId, name, birthDate, photo: "" };
+    setData(d => ({ ...d, babies: [...(d.babies || []), newBaby], activeBabyId: newId, baby: newBaby }));
+    showToast("👶 " + name + " added!");
+  };
+
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(i); }, []);
 
   // Load from Firebase on mount + subscribe to real-time updates (caregiver sync)
   useEffect(() => {
     let unsub = null;
     (async () => {
-      const d = await loadData();
-      setData(d || JSON.parse(JSON.stringify(DEFAULT_DATA)));
+      const raw = await loadData();
+      const d = migrateData(raw) || JSON.parse(JSON.stringify(DEFAULT_DATA));
+      setData(d);
       setLoading(false);
       // Subscribe to live updates after initial load
       const uid = await getUid();
@@ -141,7 +178,7 @@ export default function WieserBabyApp() {
 
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
   const addLog = (log) => {
-    setData(d => ({ ...d, logs: [...d.logs, { ...log, id: uid(), timestamp: new Date().toISOString() }] }));
+    setData(d => ({ ...d, logs: [...d.logs, { ...log, id: uid(), babyId: d.activeBabyId || "baby_1", timestamp: new Date().toISOString() }] }));
     const icons = { bottle: '🍼', diaper: '💧', sleep: '😴', medicine: '💊', poop: '💩', food: '🍎', teething: '🦷' };
     showToast(`${icons[log.type] || '📝'} Logged!`);
     setModal(null);
@@ -157,7 +194,7 @@ export default function WieserBabyApp() {
 
   const todayStr = localDateStr(now);
   const todayLogs = data.logs.filter(l => l.date === todayStr);
-  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs };
+  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby };
 
   return (
     <>
@@ -189,7 +226,15 @@ export default function WieserBabyApp() {
             <h1 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>
               <span style={{ color: theme.accent }}>Wieser</span> Baby
             </h1>
-            {data.baby.name !== "Baby" && <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{data.baby.name} {data.baby.birthDate ? `\u00B7 ${ageString(data.baby.birthDate)}` : ""}</p>}
+            <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                {activeBaby.name !== "Baby" ? activeBaby.name : ""}{activeBaby.birthDate ? ` · ${ageString(activeBaby.birthDate)}` : ""}
+                {(data.babies || []).length > 1 && (
+                  <span onClick={() => setModal(<BabySwitcherModal babies={data.babies} activeBabyId={activeBabyId} switchBaby={(id) => { switchBaby(id); setModal(null); }} addBaby={addBaby} theme={theme} />)}
+                    style={{ cursor: "pointer", background: theme.accentSoft, color: theme.accent, borderRadius: 8, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>
+                    switch
+                  </span>
+                )}
+              </p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {data.sleepState && <div style={{ background: theme.accentSoft, color: theme.accent, padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, animation: "pulse 2s ease-in-out infinite" }}>😴 Sleeping</div>}
@@ -203,7 +248,7 @@ export default function WieserBabyApp() {
           {page === "food" && <FoodPage {...commonProps} />}
           {page === "milestones" && <MilestonesPage {...commonProps} />}
           {page === "copilot" && <CoPilotPage {...commonProps} />}
-          {page === "settings" && <SettingsPage {...commonProps} />}
+          {page === "settings" && <SettingsPage {...commonProps} setModal={setModal} />}
           {page === "growth" && <GrowthPage {...commonProps} />}
           {page === "history" && <HistoryPage {...commonProps} />}
           {page === "activities" && <ActivitiesPage {...commonProps} />}
@@ -848,11 +893,34 @@ function CoPilotPage({ data, theme, updateData, showToast }) {
   </div>);
 }
 
-function SettingsPage({ data, updateData, theme, showToast, navigate }) {
-  const s = data.settings || {}, b = data.baby || DEFAULT_BABY;
-  const us = (k, v) => updateData("settings", { ...s, [k]: v }), ub = (k, v) => updateData("baby", { ...b, [k]: v });
+function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal }) {
+  const s = data.settings || {}, b = activeBaby || data.baby || DEFAULT_BABY;
+  const us = (k, v) => updateData("settings", { ...s, [k]: v });
+  const ub = (k, v) => {
+    // Update the active baby inside the babies array AND the legacy baby field
+    updateData("babies", (data.babies || []).map(baby => baby.id === activeBabyId ? { ...baby, [k]: v } : baby));
+    updateData("baby", { ...b, [k]: v });
+  };
   return (<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
     <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>⚙️ Settings</h2>
+    {(data.babies||[]).length > 1 && (
+      <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+        <SectionLabel theme={theme}>Babies</SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(data.babies||[]).map(baby => (
+            <button key={baby.id} onClick={() => switchBaby(baby.id)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 14, background: baby.id === activeBabyId ? theme.accentSoft : theme.bg, border: `1px solid ${baby.id === activeBabyId ? theme.accent : theme.border}`, cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 28 }}>👶</span>
+              <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 700, color: baby.id === activeBabyId ? theme.accent : theme.text }}>{baby.name || "Baby"}</div>{baby.birthDate && <div style={{ fontSize: 12, color: theme.textMuted }}>{ageString(baby.birthDate)}</div>}</div>
+              {baby.id === activeBabyId && <span style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>Active ✓</span>}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setModal(<AddBabyModal theme={theme} addBaby={addBaby} onClose={() => setModal(null)} />)} style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 12, background: "none", border: `1px dashed ${theme.border}`, color: theme.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Another Baby</button>
+      </div>
+    )}
+    {(data.babies||[]).length === 1 && (
+      <button onClick={() => setModal(<AddBabyModal theme={theme} addBaby={addBaby} onClose={() => setModal(null)} />)} style={{ width: "100%", padding: 12, borderRadius: 12, background: "none", border: `1px dashed ${theme.border}`, color: theme.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Another Baby</button>
+    )}
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Baby Profile</SectionLabel><input placeholder="Name" value={b.name === "Baby" ? "" : b.name} onChange={e => ub("name", e.target.value || "Baby")} style={{ ...inputStyle(theme), fontSize: 16, marginBottom: 10 }} /><label style={{ fontSize: 12, color: theme.textMuted, display: "block", marginBottom: 4 }}>Birth Date</label><input type="date" value={b.birthDate} onChange={e => ub("birthDate", e.target.value)} style={inputStyle(theme)} />{b.birthDate && <p style={{ fontSize: 13, color: theme.accent, marginTop: 8, fontWeight: 700 }}>{ageString(b.birthDate)}</p>}</div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Theme</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{Object.entries(THEMES).map(([k, t]) => (<button key={k} className="card" onClick={() => us("theme", k)} style={{ background: t.bg, border: `2px solid ${s.theme === k ? t.accent : t.border}`, borderRadius: 16, padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 24, height: 24, borderRadius: 8, background: t.accent }} /><span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{t.name}</span>{s.theme === k && <span>✓</span>}</button>))}</div></div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>AI Provider (BYOK)</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>{[{id:"groq",l:"Groq (Free)"},{id:"openai",l:"💲 OpenAI"},{id:"anthropic",l:"💲 Claude"},{id:"gemini",l:"💲 Gemini"}].map(p => (<button key={p.id} className="card" onClick={() => us("aiProvider", p.id)} style={{ background: s.aiProvider === p.id ? theme.accentSoft : theme.bg, border: `1px solid ${s.aiProvider === p.id ? theme.accent : theme.border}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", color: s.aiProvider === p.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>{p.l}</button>))}</div><input type="password" placeholder="API Key" value={s.aiKey || ""} onChange={e => us("aiKey", e.target.value)} style={inputStyle(theme)} /><p style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>{s.aiProvider === "groq" ? "Free at console.groq.com/keys" : "Paid API key required."}</p></div>
@@ -906,4 +974,61 @@ function FamilyPage({ data, updateData, theme, navigateBack, showToast }) {
     {m.length === 0 && <p style={{ color: theme.textMuted, textAlign: "center", padding: 20 }}>No family yet.</p>}
     {(data.familyUpdates||[]).length > 0 && <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, marginTop: 16 }}><SectionLabel theme={theme}>Latest Digest</SectionLabel><p style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{data.familyUpdates[data.familyUpdates.length-1].text.slice(0,200)}...</p><button onClick={() => { navigator.clipboard?.writeText(data.familyUpdates[data.familyUpdates.length-1].text); showToast("Copied!"); }} style={{ marginTop: 12, width: "100%", padding: 14, borderRadius: 14, background: theme.accentSoft, border: `1px solid ${theme.accent}`, color: theme.accent, fontWeight: 800, fontSize: 14, cursor: "pointer" }}>📋 Copy to Share</button></div>}
   </div>);
+}
+
+// ─── BABY SWITCHER MODAL ──────────────────────────────────────
+function BabySwitcherModal({ babies, activeBabyId, switchBaby, addBaby, theme }) {
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16, textAlign: "center" }}>👶 Switch Baby</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {(babies || []).map(baby => (
+          <button key={baby.id} onClick={() => switchBaby(baby.id)}
+            style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 16, background: baby.id === activeBabyId ? theme.accentSoft : theme.card, border: `2px solid ${baby.id === activeBabyId ? theme.accent : theme.border}`, cursor: "pointer", textAlign: "left" }}>
+            <span style={{ fontSize: 32 }}>👶</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: baby.id === activeBabyId ? theme.accent : theme.text }}>{baby.name || "Baby"}</div>
+              {baby.birthDate && <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{ageString(baby.birthDate)}</div>}
+            </div>
+            {baby.id === activeBabyId && <span style={{ fontSize: 20 }}>✓</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── ADD BABY MODAL ───────────────────────────────────────────
+function AddBabyModal({ theme, addBaby, onClose }) {
+  const [name, setName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+
+  const handleAdd = () => {
+    if (!name.trim()) return;
+    addBaby(name.trim(), birthDate);
+    onClose();
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>👶 Add Baby</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <input
+          placeholder="Baby's name"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          style={{ ...inputStyle(theme), fontSize: 16 }}
+          autoFocus
+        />
+        <div>
+          <label style={{ fontSize: 12, color: theme.textMuted, display: "block", marginBottom: 4 }}>Birth Date</label>
+          <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)} style={inputStyle(theme)} />
+        </div>
+        <button onClick={handleAdd} disabled={!name.trim()}
+          style={{ padding: 16, borderRadius: 14, background: name.trim() ? theme.accent : theme.border, color: "#fff", fontWeight: 700, fontSize: 16, border: "none", cursor: name.trim() ? "pointer" : "default", marginTop: 4 }}>
+          Add {name || "Baby"}
+        </button>
+      </div>
+    </div>
+  );
 }
