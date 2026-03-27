@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
 import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData } from "./firebase.js";
+import BarcodeScanner from "./BarcodeScanner.jsx";
 
 // ─── Constants & Config ───────────────────────────────────────
 const APP_VERSION = "1.3.0";
@@ -632,64 +633,119 @@ function FoodLogModal({ theme, addLog, data, updateData, todayStr, now, showToas
 
 // ─── BARCODE SCAN MODAL ───────────────────────────────────────
 function BarcodeScanModal({ theme, addLog, data, updateData, todayStr, now, showToast }) {
-  const [bc, setBc] = useState(""); const [loading, setLoading] = useState(false); const [product, setProduct] = useState(null); const [err, setErr] = useState(""); const [time, setTime] = useState(localTimeStr(now)); const [rx, setRx] = useState(""); const [servings, setServings] = useState("1");
+  const [mode, setMode]     = useState("choose"); // "choose" | "camera" | "manual" | "result"
+  const [bc, setBc]         = useState("");
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr]       = useState("");
+  const [mult, setMult]     = useState(1);
+  const [rx, setRx]         = useState(null);
 
-  const lookup = async () => {
-    if (!bc.trim()) return; setLoading(true); setErr(""); setProduct(null);
+  const fetchProduct = async (barcode) => {
+    if (!barcode.trim()) return;
+    setLoading(true); setErr("");
     try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${bc.trim()}.json`);
+      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode.trim()}.json`);
       const json = await res.json();
       if (json.status === 1 && json.product) {
-        const p = json.product, n = p.nutriments || {};
-        setProduct({ name: p.product_name || p.product_name_en || "Unknown", brand: p.brands || "", image: p.image_front_small_url || "", servingSize: p.serving_size || "", calories: Math.round(n["energy-kcal_serving"] || n["energy-kcal_100g"] || 0), protein: Math.round((n.proteins_serving || n.proteins_100g || 0) * 10) / 10, carbs: Math.round((n.carbohydrates_serving || n.carbohydrates_100g || 0) * 10) / 10, fat: Math.round((n.fat_serving || n.fat_100g || 0) * 10) / 10, fiber: Math.round((n.fiber_serving || n.fiber_100g || 0) * 10) / 10, sugar: Math.round((n.sugars_serving || n.sugars_100g || 0) * 10) / 10, nutriscore: p.nutriscore_grade || "" });
-      } else setErr("Product not found. Try a different barcode or enter manually.");
-    } catch { setErr("Lookup failed. Check connection."); }
+        const p = json.product; const n = p.nutriments || {};
+        setProduct({ name: p.product_name || "Unknown product", brand: p.brands || "", servingSize: p.serving_size || "", nutriScore: p.nutriscore_grade || null, image: p.image_front_small_url || null, calories: n["energy-kcal_serving"] || n["energy-kcal_100g"] || 0, protein: n.proteins_serving || n.proteins_100g || 0, carbs: n.carbohydrates_serving || n.carbohydrates_100g || 0, fat: n.fat_serving || n.fat_100g || 0, fiber: n.fiber_serving || n.fiber_100g || 0, sugar: n.sugars_serving || n.sugars_100g || 0 });
+        setMode("result");
+      } else { setErr("Product not found. Try a different barcode or enter manually."); }
+    } catch { setErr("Network error — check your connection."); }
     setLoading(false);
   };
 
-  const submit = () => {
-    if (!product) return; const m = parseFloat(servings) || 1;
+  const handleCameraDetect = (code) => { setBc(code); setMode("loading"); fetchProduct(code); };
+
+  const logFood = () => {
+    if (!product) return;
+    const m = mult; const time = now.toTimeString().slice(0,5);
     addLog({ type: "food", foodName: `${product.name}${product.brand ? ` (${product.brand})` : ""}`, servingSize: product.servingSize ? `${m}x ${product.servingSize}` : `${m} serving`, calories: Math.round(product.calories * m), protein: Math.round(product.protein * m * 10) / 10, carbs: Math.round(product.carbs * m * 10) / 10, fat: Math.round(product.fat * m * 10) / 10, fiber: Math.round(product.fiber * m * 10) / 10, sugar: Math.round(product.sugar * m * 10) / 10, date: todayStr, time, reaction: rx, barcode: bc.trim(), source: "barcode" });
-    if (rx === "loved" || rx === "refused") { const prefs = data.foodPreferences || { likes: [], dislikes: [] }; const k = product.name.toLowerCase(); if (rx === "loved" && !prefs.likes.includes(k)) updateData("foodPreferences", { ...prefs, likes: [...prefs.likes, k], dislikes: prefs.dislikes.filter(d => d !== k) }); if (rx === "refused" && !prefs.dislikes.includes(k)) updateData("foodPreferences", { ...prefs, dislikes: [...prefs.dislikes, k], likes: prefs.likes.filter(l => l !== k) }); }
+    if (rx === "loved" || rx === "liked") updateData(d => { const f = d.foodPreferences || { likes: [], dislikes: [] }; if (!f.likes.includes(product.name)) f.likes = [product.name, ...f.likes.slice(0, 49)]; return { ...d, foodPreferences: f }; });
+    if (rx === "refused") updateData(d => { const f = d.foodPreferences || { likes: [], dislikes: [] }; if (!f.dislikes.includes(product.name)) f.dislikes = [product.name, ...f.dislikes.slice(0, 49)]; return { ...d, foodPreferences: f }; });
+    showToast("Food logged! 🍎");
   };
+
+  // Show camera scanner in full-screen
+  if (mode === "camera") return <BarcodeScanner theme={theme} onDetected={handleCameraDetect} onClose={() => setMode("choose")} />;
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4, textAlign: "center" }}>📷 Barcode Lookup</h2>
-      <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 16 }}>Enter the barcode number from the package</p>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <input placeholder="e.g. 0016000275638" value={bc} onChange={e => setBc(e.target.value)} onKeyDown={e => e.key === "Enter" && lookup()} inputMode="numeric" style={{ flex: 1, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 14, padding: "14px 16px", color: theme.text, fontSize: 18, fontWeight: 700, textAlign: "center", letterSpacing: 2 }} />
-        <button onClick={lookup} disabled={loading || !bc.trim()} style={{ padding: "14px 20px", borderRadius: 14, background: bc.trim() ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 14, border: "none", cursor: bc.trim() ? "pointer" : "default" }}>{loading ? "..." : "Go"}</button>
-      </div>
-      {loading && <div style={{ textAlign: "center", padding: 30 }}><div style={{ fontSize: 32, animation: "spin 1s linear infinite", display: "inline-block" }}>🔍</div><p style={{ fontSize: 13, color: theme.textMuted, marginTop: 8 }}>Searching Open Food Facts...</p></div>}
-      {err && <div style={{ background: "rgba(229,115,115,0.12)", borderRadius: 14, padding: 16, textAlign: "center", marginBottom: 16 }}><span style={{ fontSize: 24 }}>😕</span><p style={{ fontSize: 13, color: "#e57373", marginTop: 8 }}>{err}</p></div>}
-      {product && (
-        <div style={{ animation: "fadeIn 0.25s ease" }}>
-          <div style={{ background: theme.card, borderRadius: 20, padding: 16, border: `1px solid ${theme.border}`, marginBottom: 16 }}>
-            <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12 }}>
-              {product.image && <img src={product.image} alt="" style={{ width: 60, height: 60, borderRadius: 12, objectFit: "cover", background: theme.bg }} onError={e => e.target.style.display = "none"} />}
-              <div><div style={{ fontSize: 16, fontWeight: 800 }}>{product.name}</div>{product.brand && <div style={{ fontSize: 12, color: theme.textMuted }}>{product.brand}</div>}{product.servingSize && <div style={{ fontSize: 12, color: theme.accent, fontWeight: 600 }}>Serving: {product.servingSize}</div>}{product.nutriscore && <div style={{ fontSize: 11, color: theme.textMuted }}>Nutri-Score: {product.nutriscore.toUpperCase()}</div>}</div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-              <MacroBox label="Calories" value={product.calories} unit="kcal" color={theme.accent} theme={theme} /><MacroBox label="Protein" value={product.protein} unit="g" color={theme.info} theme={theme} /><MacroBox label="Carbs" value={product.carbs} unit="g" color={theme.warning} theme={theme} /><MacroBox label="Fat" value={product.fat} unit="g" color={theme.accent} theme={theme} /><MacroBox label="Fiber" value={product.fiber} unit="g" color={theme.success} theme={theme} /><MacroBox label="Sugar" value={product.sugar} unit="g" color={theme.purple} theme={theme} />
+      {mode === "choose" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 8 }}>
+          <p style={{ fontSize: 14, color: theme.textMuted, textAlign: "center", marginBottom: 4 }}>How would you like to scan?</p>
+          <button onClick={() => setMode("camera")} style={{ padding: "20px 16px", borderRadius: 16, background: theme.accentSoft, color: theme.accent, fontWeight: 700, fontSize: 16, border: `2px solid ${theme.accent}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            📷 Use Camera
+          </button>
+          <button onClick={() => setMode("manual")} style={{ padding: "20px 16px", borderRadius: 16, background: theme.card, color: theme.text, fontWeight: 600, fontSize: 16, border: `1px solid ${theme.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            ⌨️ Enter Barcode Manually
+          </button>
+        </div>
+      )}
+
+      {mode === "manual" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center" }}>Enter the barcode number from the package</p>
+          <input value={bc} onChange={e => setBc(e.target.value)} placeholder="e.g. 0038000845260" style={{ padding: "14px 16px", borderRadius: 12, background: theme.card, border: `1px solid ${theme.border}`, color: theme.text, fontSize: 18, fontFamily: "monospace", letterSpacing: 2 }} />
+          {err && <p style={{ color: theme.warning, fontSize: 13, textAlign: "center" }}>{err}</p>}
+          <button onClick={() => fetchProduct(bc)} disabled={loading || !bc.trim()} style={{ padding: 16, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 700, fontSize: 16, border: "none", cursor: "pointer", opacity: loading || !bc.trim() ? 0.5 : 1 }}>
+            {loading ? "Looking up…" : "Look Up Product"}
+          </button>
+        </div>
+      )}
+
+      {mode === "loading" && (
+        <div style={{ textAlign: "center", padding: 40, color: theme.textMuted, fontFamily: "'Nunito'" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+          <p>Looking up barcode {bc}…</p>
+          {err && <p style={{ color: theme.warning, fontSize: 13, marginTop: 12 }}>{err}<br /><button onClick={() => setMode("manual")} style={{ marginTop: 8, background: "none", border: "none", color: theme.accent, cursor: "pointer", textDecoration: "underline" }}>Enter manually instead</button></p>}
+        </div>
+      )}
+
+      {mode === "result" && product && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+            {product.image && <img src={product.image} alt="" style={{ width: 72, height: 72, objectFit: "contain", borderRadius: 10, background: "#fff" }} />}
+            <div style={{ flex: 1 }}>
+              <p style={{ fontWeight: 700, fontSize: 15, color: theme.text, margin: 0 }}>{product.name}</p>
+              {product.brand && <p style={{ fontSize: 13, color: theme.textMuted, margin: "2px 0 0" }}>{product.brand}</p>}
+              {product.nutriScore && <span style={{ fontSize: 11, fontWeight: 700, background: theme.accentSoft, color: theme.accent, padding: "2px 8px", borderRadius: 6 }}>Nutri-Score {product.nutriScore.toUpperCase()}</span>}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <div style={{ flex: 1 }}><label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>SERVINGS</label><input type="number" step="0.5" min="0.25" value={servings} onChange={e => setServings(e.target.value)} style={{ width: "100%", background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 12, padding: "10px 14px", color: theme.text, fontSize: 16, fontWeight: 700, textAlign: "center", marginTop: 4 }} /></div>
-            <div style={{ flex: 1 }}><label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>TIME</label><input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ width: "100%", background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 12, padding: "10px 14px", color: theme.text, fontSize: 14, marginTop: 4 }} /></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+            {[["Cal", product.calories, "kcal"], ["Protein", product.protein, "g"], ["Carbs", product.carbs, "g"], ["Fat", product.fat, "g"], ["Fiber", product.fiber, "g"], ["Sugar", product.sugar, "g"]].map(([l, v, u]) => (
+              <div key={l} style={{ background: theme.card, borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: theme.accent }}>{Math.round(v * mult * 10) / 10}</div>
+                <div style={{ fontSize: 10, color: theme.textMuted }}>{u}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted }}>{l}</div>
+              </div>
+            ))}
           </div>
-          <SectionLabel theme={theme}>Reaction</SectionLabel>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{[{id:"loved",e:"😍",l:"Loved"},{id:"liked",e:"😊",l:"Liked"},{id:"meh",e:"😐",l:"Meh"},{id:"refused",e:"🙅",l:"Refused"}].map(r => (<button key={r.id} onClick={() => setRx(r.id)} style={{ flex: 1, padding: "8px 4px", borderRadius: 12, textAlign: "center", background: rx === r.id ? theme.accentSoft : theme.bg, border: `1px solid ${rx === r.id ? theme.accent : theme.border}`, cursor: "pointer", fontSize: 11, fontWeight: 700, color: rx === r.id ? theme.accent : theme.textMuted }}><span style={{ fontSize: 16, display: "block" }}>{r.e}</span>{r.l}</button>))}</div>
-          <button onClick={submit} style={{ width: "100%", padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>Log {product.name}</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 13, color: theme.textMuted }}>Servings:</span>
+            {[0.5, 1, 1.5, 2, 3].map(n => (
+              <button key={n} onClick={() => setMult(n)} style={{ padding: "6px 12px", borderRadius: 8, background: mult === n ? theme.accent : theme.card, color: mult === n ? "#fff" : theme.text, border: `1px solid ${theme.border}`, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>{n}x</button>
+            ))}
+          </div>
+          <div>
+            <p style={{ fontSize: 13, color: theme.textMuted, marginBottom: 8 }}>Reaction?</p>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[["loved","😍"],["liked","😊"],["meh","😐"],["refused","🙅"]].map(([v, emoji]) => (
+                <button key={v} onClick={() => setRx(rx === v ? null : v)} style={{ flex: 1, padding: "10px 4px", borderRadius: 10, background: rx === v ? theme.accentSoft : theme.card, border: `1px solid ${rx === v ? theme.accent : theme.border}`, cursor: "pointer", fontSize: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                  {emoji}<span style={{ fontSize: 9, color: theme.textMuted }}>{v}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <button onClick={logFood} style={{ padding: 16, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 700, fontSize: 16, border: "none", cursor: "pointer" }}>Log This Food ✓</button>
+          <button onClick={() => setMode("choose")} style={{ padding: 10, background: "none", border: "none", color: theme.textMuted, cursor: "pointer", fontSize: 13 }}>← Scan Another</button>
         </div>
       )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// OTHER MODALS
-// ═══════════════════════════════════════════════════════════════
 function BottleModal({ theme, addLog, todayStr, now }) {
   const [amt, setAmt] = useState(""); const [ft, setFt] = useState("formula"); const [time, setTime] = useState(localTimeStr(now));
   return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🍼 Log Bottle</h2><div style={{ display: "flex", gap: 8, marginBottom: 16, justifyContent: "center", flexWrap: "wrap" }}>{["formula","breast","milk","water","juice"].map(t => (<button key={t} onClick={() => setFt(t)} style={{ background: ft === t ? theme.accentSoft : theme.bg, border: `1px solid ${ft === t ? theme.accent : theme.border}`, borderRadius: 12, padding: "8px 14px", color: ft === t ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>))}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>{[2,3,4,5,6,7,8].map(a => (<button key={a} onClick={() => setAmt(String(a))} style={{ width: 56, height: 56, borderRadius: 16, fontSize: 18, fontWeight: 800, background: amt === String(a) ? theme.accent : theme.bg, color: amt === String(a) ? "#fff" : theme.text, border: `2px solid ${amt === String(a) ? theme.accent : theme.border}`, cursor: "pointer" }}>{a}</button>))}</div><div style={{ display: "flex", gap: 8, marginBottom: 16 }}><input type="number" step="0.5" placeholder="Custom oz" value={amt} onChange={e => setAmt(e.target.value)} style={{ flex: 1, ...inputStyle(theme), fontSize: 18, fontWeight: 700, textAlign: "center" }} /><input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle(theme)} /></div><button onClick={() => amt && addLog({ type: "bottle", amount: parseFloat(amt), feedType: ft, date: todayStr, time })} disabled={!amt} style={{ width: "100%", padding: 16, borderRadius: 16, background: amt ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: amt ? "pointer" : "default" }}>Log {amt||0} oz {ft}</button></div>);
