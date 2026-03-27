@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
+import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData } from "./firebase.js";
 
 // ─── Constants & Config ───────────────────────────────────────
-const APP_VERSION = "1.1.0";
-const STORAGE_KEY = "wieser-baby-data";
+const APP_VERSION = "1.3.0";
 const THEMES = {
   midnight: { bg: "#07080d", card: "#12141c", cardHover: "#1a1d28", border: "#1e2130", accent: "#f4845f", accentSoft: "rgba(244,132,95,0.15)", text: "#e8e6e3", textMuted: "#7a7d8c", success: "#88d8b0", warning: "#f6ae2d", info: "#7eb8da", purple: "#b8a9c9", name: "Midnight" },
   ocean: { bg: "#060d14", card: "#0c1a28", cardHover: "#122234", border: "#1a2e42", accent: "#4fc3f7", accentSoft: "rgba(79,195,247,0.15)", text: "#dce8f0", textMuted: "#5a7a90", success: "#81c784", warning: "#ffb74d", info: "#64b5f6", purple: "#ab99c7", name: "Ocean" },
@@ -83,9 +83,11 @@ const last7Days = () => Array.from({length: 7}, (_, i) => { const d = new Date()
 const dayLabel = (ds) => new Date(ds + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-// ─── Storage ──────────────────────────────────────────────────
-const loadData = async () => { try { const r = await window.storage.get(STORAGE_KEY); return r ? JSON.parse(r.value) : null; } catch { return null; } };
-const saveData = async (data) => { try { await window.storage.set(STORAGE_KEY, JSON.stringify(data)); } catch (e) { console.error("Save failed:", e); } };
+// ─── Storage (Firebase + localStorage fallback) ───────────────
+let _uid = null;
+const getUid = async () => { if (!_uid) _uid = await ensureSignedIn(); return _uid; };
+const loadData = async () => { try { const uid = await getUid(); return await loadUserData(uid); } catch { return null; } };
+const saveData = async (data) => { try { const uid = await getUid(); await saveUserData(uid, data); } catch (e) { console.error("Save failed:", e); } };
 
 const DEFAULT_DATA = {
   baby: { ...DEFAULT_BABY }, logs: [], milestones: {}, growthRecords: [],
@@ -109,7 +111,27 @@ export default function WieserBabyApp() {
   const theme = data?.settings?.theme ? THEMES[data.settings.theme] : THEMES.midnight;
 
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(i); }, []);
-  useEffect(() => { (async () => { const d = await loadData(); setData(d || JSON.parse(JSON.stringify(DEFAULT_DATA))); setLoading(false); })(); }, []);
+
+  // Load from Firebase on mount + subscribe to real-time updates (caregiver sync)
+  useEffect(() => {
+    let unsub = null;
+    (async () => {
+      const d = await loadData();
+      setData(d || JSON.parse(JSON.stringify(DEFAULT_DATA)));
+      setLoading(false);
+      // Subscribe to live updates after initial load
+      const uid = await getUid();
+      unsub = subscribeToUserData(uid, (fresh) => {
+        setData(prev => {
+          // Only update if the incoming data is actually different (avoid save loops)
+          if (JSON.stringify(prev) !== JSON.stringify(fresh)) return fresh;
+          return prev;
+        });
+      });
+    })();
+    return () => { if (unsub) unsub(); };
+  }, []);
+
   useEffect(() => { if (data && !loading) saveData(data); }, [data, loading]);
 
   const navigate = useCallback((p) => { setPageHistory(h => [...h, page]); setPage(p); }, [page]);
