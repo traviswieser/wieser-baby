@@ -41,6 +41,10 @@ git checkout main && git pull origin main --rebase && git merge dev && git push 
 git remote set-url origin https://github.com/traviswieser/wieser-baby.git
 ```
 
+### ⚠️ Critical Rule: Commit After Each Feature
+
+**Never batch multiple features into one commit.** Claude's context window is limited — if the session runs out of space mid-build, unbatched work is lost permanently. Always commit and push to `dev` immediately after each feature is complete and verified, before starting the next one. This way, every feature is safely preserved in GitHub regardless of what happens to the session.
+
 ---
 
 ## Commit History
