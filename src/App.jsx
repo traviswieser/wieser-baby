@@ -85,6 +85,73 @@ const last7Days = () => Array.from({length: 7}, (_, i) => { const d = new Date()
 const dayLabel = (ds) => new Date(ds + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
+// ─── Predictive Sleep Windows ────────────────────────────────
+/**
+ * Analyses past sleep logs and returns a prediction object:
+ *  { nextSleepTime, avgNapDuration, avgNapCount, confidence, message }
+ */
+function predictNextSleep(logs, now) {
+  const sleepLogs = logs
+    .filter(l => l.type === "sleep" && l.subtype === "woke_up" && l.durationMins && l.time)
+    .sort((a, b) => b.timestamp?.localeCompare(a.timestamp ?? "") ?? 0)
+    .slice(0, 20); // use last 20 sleep entries
+
+  if (sleepLogs.length < 3) {
+    return { message: "Log at least 3 sleeps to see predictions", confidence: 0 };
+  }
+
+  // Average wake-window (time between waking and next sleep onset)
+  // Since we only store wake events, we approximate the next sleep
+  // as (average awake duration) after the last wake time.
+  const durations = sleepLogs.map(l => l.durationMins);
+  const avgNapDuration = Math.round(durations.reduce((s, d) => s + d, 0) / durations.length);
+
+  // Find typical awake windows by looking at gaps between sleep end and next sleep start
+  const wakeWindows = [];
+  for (let i = 0; i < sleepLogs.length - 1; i++) {
+    const curr = sleepLogs[i];
+    const next = sleepLogs[i + 1];
+    if (curr.date && curr.time && next.date && next.time) {
+      const currEnd  = new Date(`${curr.date}T${curr.time}`);
+      const nextStart = new Date(`${next.date}T${next.time}`);
+      const gapMins = (currEnd - nextStart) / 60000;
+      if (gapMins > 30 && gapMins < 360) wakeWindows.push(gapMins); // 30min–6hr is plausible
+    }
+  }
+
+  const avgAwakeMins = wakeWindows.length > 0
+    ? Math.round(wakeWindows.reduce((s, w) => s + w, 0) / wakeWindows.length)
+    : 120; // default 2 hours if not enough data
+
+  // Last wake time
+  const lastWake = sleepLogs[0];
+  const lastWakeTime = lastWake ? new Date(`${lastWake.date}T${lastWake.time}`) : now;
+  const predictedSleepTime = new Date(lastWakeTime.getTime() + avgAwakeMins * 60000);
+
+  const minsUntil = Math.round((predictedSleepTime - now) / 60000);
+  const confidence = wakeWindows.length >= 5 ? "high" : wakeWindows.length >= 3 ? "medium" : "low";
+
+  let message;
+  if (minsUntil <= 0) {
+    message = `Baby may be ready to sleep now (avg awake window: ${avgAwakeMins}m)`;
+  } else if (minsUntil < 60) {
+    message = `Next sleep in ~${minsUntil} min`;
+  } else {
+    const hrs = Math.floor(minsUntil / 60), mins = minsUntil % 60;
+    message = `Next sleep in ~${hrs}h${mins > 0 ? ` ${mins}m` : ""}`;
+  }
+
+  return {
+    predictedSleepTime,
+    avgNapDuration,
+    avgAwakeMins,
+    minsUntil,
+    confidence,
+    message,
+    timeStr: predictedSleepTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+  };
+}
+
 // ─── Storage (Firebase + localStorage fallback) ───────────────
 let _uid = null;
 const getUid = async () => { if (!_uid) _uid = await ensureSignedIn(); return _uid; };
@@ -343,6 +410,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
     } else { updateData("sleepState", { startTime: now.toISOString() }); showToast("😴 Sleep timer started"); }
   };
   const sleepDur = data.sleepState ? (() => { const m = Math.floor((now - new Date(data.sleepState.startTime)) / 60000); return m >= 60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`; })() : null;
+  const sleepPrediction = !data.sleepState ? predictNextSleep(data.logs || [], now) : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -362,6 +430,29 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
           <SummaryBubble icon="🍎" value={`${totalCals}`} unit="cal" sub={`${foods.length} items`} color={theme.success} theme={theme} />
         </div>
       </div>
+
+      {sleepPrediction && sleepPrediction.confidence !== 0 && (
+        <div style={{ background: theme.card, borderRadius: 20, padding: 18, border: `1px solid ${theme.purple}40`, display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ fontSize: 36 }}>😴</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: theme.purple, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
+              Sleep Prediction · {sleepPrediction.confidence} confidence
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{sleepPrediction.message}</div>
+            {sleepPrediction.avgNapDuration > 0 && (
+              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 3 }}>
+                Avg nap: {sleepPrediction.avgNapDuration}m · Awake window: {sleepPrediction.avgAwakeMins}m
+              </div>
+            )}
+          </div>
+          {sleepPrediction.timeStr && (
+            <div style={{ textAlign: "center", flexShrink: 0 }}>
+              <div style={{ fontSize: 18, fontWeight: 900, color: theme.purple, fontFamily: "'Fredoka'" }}>{sleepPrediction.timeStr}</div>
+              <div style={{ fontSize: 10, color: theme.textMuted }}>predicted</div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
         <QuickAction icon="💧" label="Wet" theme={theme} onClick={() => addLog({ type: "diaper", subtype: "wet", date: todayStr, time: localTimeStr(now) })} />
