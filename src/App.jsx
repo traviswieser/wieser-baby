@@ -599,13 +599,19 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
   const totalOz = bottles.reduce((s, b) => s + (b.amount || 0), 0);
   const totalCals = foods.reduce((s, f) => s + (f.calories || 0), 0);
 
-  const lastBottle = [...bottles].sort((a,b) => (b.timestamp||"").localeCompare(a.timestamp||""))[0];
-  const lastPoop   = [...poops].sort((a,b)   => (b.timestamp||"").localeCompare(a.timestamp||""))[0];
-  const lastFood   = [...foods].filter(f => f.source !== "bottle").sort((a,b) => (b.timestamp||"").localeCompare(a.timestamp||""))[0];
+  // Sort by actual recorded time (date+time), falling back to entry timestamp
+  const logActualTime = (l) => (l.date && l.time) ? `${l.date}T${l.time}` : (l.timestamp || "");
+  const lastBottle = [...bottles].sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastPoop   = [...poops].sort((a,b)   => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastFood   = [...foods].filter(f => f.source !== "bottle").sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
 
   const timeAgo = (log) => {
     if (!log) return null;
-    const m = Math.floor((now - new Date(log.timestamp)) / 60000);
+    // Use the log's actual recorded date+time, not the entry timestamp
+    const logTime = (log.date && log.time)
+      ? new Date(`${log.date}T${log.time}`)
+      : new Date(log.timestamp);
+    const m = Math.floor((now - logTime) / 60000);
     if (m < 1) return "just now";
     if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60), mins = m % 60;
@@ -652,7 +658,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <QuickLogButton icon="🍼" label="Bottle" sublabel={timeAgo(lastBottle) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<BottleModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
-        <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (sleeps.length > 0 ? timeAgo([...sleeps].sort((a,b)=>(b.timestamp||"").localeCompare(a.timestamp||""))[0]) : "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
+        <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (sleeps.length > 0 ? timeAgo([...sleeps].sort((a,b)=>logActualTime(b).localeCompare(logActualTime(a)))[0]) : "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
         <QuickLogButton icon="💩" label="Poop" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.warning} theme={theme} onClick={() => setModal(<PoopModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickLogButton icon="🍎" label="Food" sublabel={timeAgo(lastFood) || "not yet today"} color={theme.success} theme={theme} onClick={() => setModal(<FoodLogModal theme={theme} addLog={addLog} data={data} updateData={updateData} todayStr={todayStr} now={now} showToast={showToast} />)} />
       </div>
@@ -797,7 +803,10 @@ function PoopModal({ theme, addLog, todayStr, now }) {
           {POOP_CONSISTENCIES.map(c => (
             <button key={c.id} className="card" onClick={() => setConsistency(c.id)} style={{ background: consistency === c.id ? theme.accentSoft : theme.bg, border: `2px solid ${consistency === c.id ? theme.accent : theme.border}`, borderRadius: 14, padding: "14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", textAlign: "left" }}>
               <span style={{ fontSize: 22 }}>{c.emoji}</span>
-              <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 700 }}>{c.label}</div><div style={{ fontSize: 11, color: theme.textMuted, lineHeight: 1.3 }}>{c.health.split('.')[0]}.</div></div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: consistency === c.id ? theme.accent : theme.text }}>{c.label}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, lineHeight: 1.3 }}>{c.health.split('.')[0]}.</div>
+              </div>
               <span style={{ fontSize: 10, color: c.status === "alert" ? "#e57373" : c.status === "watch" ? theme.warning : theme.success, fontWeight: 700 }}>{c.status === "alert" ? "⚠️" : c.status === "watch" ? "👀" : "✅"}</span>
             </button>
           ))}
