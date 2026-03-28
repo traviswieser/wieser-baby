@@ -111,15 +111,10 @@ export default function AuthScreen({ onSignedIn, theme }) {
     clearMessages(); setLoading(true);
     try {
       const user = await signInWithGoogle();
-      if (user) {
-        onSignedIn(user);
-      } else {
-        // Redirect initiated — show a message so the user knows what's happening
-        setInfo("Redirecting to Google… you will be brought back here to sign in.");
-      }
+      if (user) onSignedIn(user); // null on mobile (redirect flow)
     } catch (err) {
       console.error("Google sign-in error:", err.code, err.message);
-      setError(friendlyError(err.code) + (err.code ? ` (${err.code})` : ""));
+      setError(friendlyError(err.code));
     }
     setLoading(false);
   };

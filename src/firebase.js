@@ -51,45 +51,22 @@ export function getCurrentUser() {
 
 export async function signInWithGoogle() {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
   if (isMobile) {
-    // Mobile: always use redirect (popups blocked by WebView)
     await signInWithRedirect(auth, googleProvider);
     return null;
   }
-
-  // Desktop: try popup first (avoids third-party cookie issues with redirect)
-  try {
-    const cred = await signInWithPopup(auth, googleProvider);
-    return cred.user;
-  } catch (err) {
-    if (err.code === "auth/popup-blocked" || err.code === "auth/popup-closed-by-user") {
-      // Fall back to redirect if popup was blocked
-      await signInWithRedirect(auth, googleProvider);
-      return null;
-    }
-    throw err;
-  }
+  const cred = await signInWithPopup(auth, googleProvider);
+  return cred.user;
 }
 
 export async function checkRedirectResult() {
   try {
     const r = await getRedirectResult(auth);
-    if (r?.user) {
-      console.log("checkRedirectResult: got user from redirect", r.user.email);
-      return r.user;
-    }
+    return r?.user ?? null;
   } catch (err) {
     console.warn("checkRedirectResult error:", err.code, err.message);
+    return null;
   }
-  // Fallback: return whoever is currently signed in (onAuthStateChanged
-  // fires before getRedirectResult resolves on some browsers)
-  return new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      unsub();
-      resolve(user);
-    });
-  });
 }
 
 export async function registerWithEmail(email, password, displayName) {

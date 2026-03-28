@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
-import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut, getCurrentUser, checkRedirectResult, updateUserProfile, auth } from "./firebase.js";
-import { onAuthStateChanged } from "firebase/auth";
+import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut, getCurrentUser, checkRedirectResult, updateUserProfile } from "./firebase.js";
 import AuthScreen from "./AuthScreen.jsx";
 import HouseholdSync from "./HouseholdSync.jsx";
 import BarcodeScanner from "./BarcodeScanner.jsx";
@@ -351,50 +350,31 @@ export default function WieserBabyApp() {
 
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 10000); return () => clearInterval(i); }, []);
 
-  // Check auth state on mount, then load data.
-  // We use a PERSISTENT onAuthStateChanged listener — not a one-shot promise —
-  // so that Google redirect sign-ins (which resolve async after page load)
-  // are always caught, even on slow connections.
+  // Check auth state on mount, then load data
   useEffect(() => {
     let dataUnsub = null;
-    let handled = false; // prevent double-loading if listener fires twice
-
-    // Consume the redirect result so Firebase clears its pending state.
-    // We don't rely on its return value — onAuthStateChanged is the source of truth.
-    checkRedirectResult().catch(err => console.warn("redirect result error:", err));
-
-    const authUnsub = onAuthStateChanged(auth, async (user) => {
-      // undefined means still loading (shouldn't happen with this API but guard anyway)
-      setCurrentUser(user ?? null);
-
-      if (!user) {
-        setLoading(false);
-        // Clean up any existing data subscription
-        if (dataUnsub) { dataUnsub(); dataUnsub = null; }
-        handled = false;
-        return;
-      }
-
-      // Already loaded data for this user — don't reload on re-fires
-      if (handled) return;
-      handled = true;
+    (async () => {
+      // Handle Google redirect result first (mobile OAuth flow)
+      await checkRedirectResult();
+      // Get current auth state
+      const user = await getCurrentUser();
+      setCurrentUser(user);
+      if (!user) { setLoading(false); return; }
 
       const raw = await loadData();
       const d = migrateData(raw) || JSON.parse(JSON.stringify(DEFAULT_DATA));
       setData(d);
       setLoading(false);
 
-      const uid = user.uid;
-      if (dataUnsub) dataUnsub();
+      const uid = await getUid();
       dataUnsub = subscribeToUserData(uid, (fresh) => {
         setData(prev => {
           if (JSON.stringify(prev) !== JSON.stringify(fresh)) return fresh;
           return prev;
         });
       });
-    });
-
-    return () => { authUnsub(); if (dataUnsub) dataUnsub(); };
+    })();
+    return () => { if (dataUnsub) dataUnsub(); };
   }, []);
 
   useEffect(() => { if (data && !loading) saveData(data); }, [data, loading]);
