@@ -1985,6 +1985,91 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
 }
 
 
+// ─── SLEEP EDIT FIELDS ───────────────────────────────────────
+// Used inside EditLogModal for woke_up sleep logs.
+// Derives start time from end time − durationMins.
+// Editing start or end time auto-recalculates duration.
+function SleepEditFields({ fields, set, theme, log, is }) {
+  // Derive start time: end time (fields.time on fields.date) minus durationMins
+  const deriveStartTime = (endDateStr, endTimeStr, durationMins) => {
+    if (!endDateStr || !endTimeStr) return { date: endDateStr || localDateStr(), time: "00:00" };
+    const end = new Date(`${endDateStr}T${endTimeStr}`);
+    const start = new Date(end.getTime() - (durationMins || 0) * 60000);
+    return {
+      date: localDateStr(start),
+      time: localTimeStr(start),
+    };
+  };
+
+  const derived = deriveStartTime(fields.date, fields.time, fields.durationMins);
+  const [startDate, setStartDate] = useState(derived.date);
+  const [startTime, setStartTime] = useState(derived.time);
+
+  const recalc = (newStartDate, newStartTime, newEndDate, newEndTime) => {
+    if (!newStartDate || !newStartTime || !newEndDate || !newEndTime) return;
+    const start = new Date(`${newStartDate}T${newStartTime}`);
+    const end   = new Date(`${newEndDate}T${newEndTime}`);
+    const mins  = Math.round((end - start) / 60000);
+    if (mins > 0) set("durationMins", mins);
+  };
+
+  const handleStartDate = (v) => { setStartDate(v); recalc(v, startTime, fields.date, fields.time); };
+  const handleStartTime = (v) => { setStartTime(v); recalc(startDate, v, fields.date, fields.time); };
+  const handleEndDate   = (v) => { set("date", v);  recalc(startDate, startTime, v, fields.time); };
+  const handleEndTime   = (v) => { set("time", v);  recalc(startDate, startTime, fields.date, v); };
+
+  const durMins = fields.durationMins || 0;
+  const durLabel = durMins >= 60
+    ? `${Math.floor(durMins / 60)}h ${durMins % 60}m`
+    : `${durMins}m`;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Start */}
+      <div>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 6 }}>
+          😴 FELL ASLEEP
+        </label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input type="date" value={startDate} onChange={e => handleStartDate(e.target.value)} style={{ ...is, flex: 1 }} />
+          <input type="time" value={startTime} onChange={e => handleStartTime(e.target.value)} style={{ ...is, flex: 1 }} />
+        </div>
+      </div>
+
+      {/* End */}
+      <div>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 6 }}>
+          ☀️ WOKE UP
+        </label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input type="date" value={fields.date || ""} onChange={e => handleEndDate(e.target.value)} style={{ ...is, flex: 1 }} />
+          <input type="time" value={fields.time || ""} onChange={e => handleEndTime(e.target.value)} style={{ ...is, flex: 1 }} />
+        </div>
+      </div>
+
+      {/* Duration display + manual override */}
+      <div style={{ background: theme.bg, borderRadius: 14, padding: "14px 16px", border: `1px solid ${theme.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>DURATION</label>
+          <span style={{ fontSize: 22, fontWeight: 900, color: theme.purple, fontFamily: "'Fredoka', sans-serif" }}>
+            {durLabel}
+          </span>
+        </div>
+        <input
+          type="number"
+          value={durMins}
+          onChange={e => set("durationMins", Math.max(0, parseInt(e.target.value) || 0))}
+          style={{ ...is, textAlign: "center" }}
+          placeholder="Override minutes"
+        />
+        <p style={{ fontSize: 11, color: theme.textMuted, marginTop: 6, textAlign: "center" }}>
+          Auto-calculated from start/end · or type to override
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // EDIT LOG MODAL — handles all log types
 // ═══════════════════════════════════════════════════════════════
@@ -2000,7 +2085,8 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
       </h2>
       <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 20 }}>{log.date} · {formatTime12(log.time)}</p>
 
-      {/* Date + time — common to all */}
+      {/* Date + time — common to all except sleep (which has its own start/end fields) */}
+      {log.type !== "sleep" && (
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
         <div style={{ flex: 1 }}>
           <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>DATE</label>
@@ -2011,6 +2097,7 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
           <input type="time" value={fields.time || ""} onChange={e => set("time", e.target.value)} style={is} />
         </div>
       </div>
+      )}
 
       {/* ── Bottle ── */}
       {log.type === "bottle" && (
@@ -2032,11 +2119,7 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
 
       {/* ── Sleep ── */}
       {log.type === "sleep" && log.subtype === "woke_up" && (
-        <div>
-          <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>DURATION (minutes)</label>
-          <input type="number" value={fields.durationMins || ""} onChange={e => set("durationMins", parseInt(e.target.value))} style={{ ...is, fontSize: 20, textAlign: "center" }} />
-          {fields.durationMins >= 60 && <p style={{ fontSize: 12, color: theme.accent, marginTop: 6, textAlign: "center" }}>{Math.floor(fields.durationMins/60)}h {fields.durationMins%60}m</p>}
-        </div>
+        <SleepEditFields fields={fields} set={set} theme={theme} log={log} is={is} />
       )}
 
       {/* ── Food ── */}
