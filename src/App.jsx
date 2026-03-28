@@ -670,7 +670,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <QuickLogButton icon="🍼" label="Bottle" sublabel={timeAgo(lastBottle) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<BottleModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (timeAgo(lastSleep) || "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
-        <QuickLogButton icon="💩" label="Poop" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.warning} theme={theme} onClick={() => setModal(<PoopModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} includeWet />)} />
+        <QuickLogButton icon="💧" label="Diaper" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<DiaperModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickLogButton icon="🍎" label="Food" sublabel={timeAgo(lastFood) || "not yet today"} color={theme.success} theme={theme} onClick={() => setModal(<FoodLogModal theme={theme} addLog={addLog} data={data} updateData={updateData} todayStr={todayStr} now={now} showToast={showToast} />)} />
       </div>
 
@@ -708,7 +708,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
-        <QuickAction icon="💧" label="Diaper" theme={theme} onClick={() => setModal(<DiaperModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
+        <QuickAction icon="💩" label="Poop" theme={theme} onClick={() => setModal(<PoopModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} includeWet />)} />
         <QuickAction icon="💊" label="Meds" theme={theme} onClick={() => setModal(<MedicineModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="📝" label="Note" theme={theme} onClick={() => setModal(<NoteModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="🦷" label="Teeth" theme={theme} onClick={() => setModal(<TeethingModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
