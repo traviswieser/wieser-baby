@@ -601,15 +601,16 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
 
   // Sort by actual recorded time (date+time), falling back to entry timestamp
   const logActualTime = (l) => (l.date && l.time) ? `${l.date}T${l.time}` : (l.timestamp || "");
-  const lastBottle  = [...bottles].filter(isPast).sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  const lastPoop    = [...poops].filter(isPast).sort((a,b)   => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  const lastFood    = [...foods].filter(f => f.source !== "bottle" && isPast(f)).sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  // Search ALL logs for the most recent completed event, excluding future-dated logs
+  // Exclude future-dated logs (e.g. a nap logged with tonight's time by mistake)
   const isPast = (l) => {
     const t = logActualTime(l);
     return t ? t <= `${localDateStr(now)}T${localTimeStr(now)}` : true;
   };
-  const lastSleep = [...(data.logs || [])]
+  const lastBottle  = [...bottles].filter(isPast).sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastPoop    = [...poops].filter(isPast).sort((a,b)   => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastFood    = [...foods].filter(f => f.source !== "bottle" && isPast(f)).sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  // Search ALL logs (not just today) for the most recent completed woke_up sleep
+  const lastSleep   = [...(data.logs || [])]
     .filter(l => l.type === "sleep" && l.subtype === "woke_up" && l.date && l.time && isPast(l))
     .sort((a, b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
 
