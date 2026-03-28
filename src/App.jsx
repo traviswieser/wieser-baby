@@ -2120,20 +2120,81 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
 }
 
 function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModal, addLog, now }) {
-  const [fd, setFd] = useState(localDateStr()); const [ft, setFt] = useState("all");
-  const logs = data.logs.filter(l => l.date === fd && (ft === "all" || l.type === ft));
-  return (<div>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}><button onClick={navigateBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: theme.text }}>←</button><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>📅 History</h2></div>
-    <input type="date" value={fd} onChange={e => setFd(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 10 }} />
-    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>{["all","bottle","poop","diaper","sleep","food","medicine","note"].map(t => (<button key={t} className="tab-btn" onClick={() => setFt(t)} style={{ background: ft === t ? theme.accentSoft : theme.card, border: `1px solid ${ft === t ? theme.accent : theme.border}`, borderRadius: 10, padding: "6px 12px", color: ft === t ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 11, textTransform: "capitalize" }}>{t}</button>))}</div>
-    {logs.length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: 30 }}>No logs.</p> : logs.map(l => (
-      <div key={l.id} style={{ background: theme.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${theme.border}`, display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-        <span style={{ fontSize: 18 }}>{logIcon(l.type)}</span>
-        <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{l.type === "bottle" ? `${l.amount} oz ${l.feedType||""}` : l.type === "poop" ? `${POOP_COLORS.find(c=>c.id===l.color)?.label||""} / ${POOP_CONSISTENCIES.find(c=>c.id===l.consistency)?.label||""}` : l.type === "diaper" ? "Wet" : l.type === "sleep" ? (l.subtype === "woke_up" ? (l.durationMins >= 60 ? `Slept ${Math.floor((l.durationMins||0)/60)}h ${(l.durationMins||0)%60}m` : `Slept ${l.durationMins||0}m`) : "Asleep") : l.type === "food" ? `${l.foodName||""} (${l.calories||0}cal)` : l.type === "medicine" ? `${l.name} ${l.dose||""}` : l.note?.slice(0,40)||"Note"}</div><div style={{ fontSize: 11, color: theme.textMuted }}>{formatTime12(l.time)}</div></div>
-        <button onClick={() => { if (window.confirm("Delete?")) { updateData("logs", data.logs.filter(x => x.id !== l.id)); showToast("Deleted"); } }} style={{ background: "none", border: "none", fontSize: 14, cursor: "pointer", color: theme.textMuted }}>✕</button>
+  const [fd, setFd] = useState(localDateStr());
+  const [ft, setFt] = useState("all");
+
+  const logs = [...data.logs]
+    .filter(l => l.date === fd && (ft === "all" || l.type === ft))
+    .reverse();
+
+  const logLabel = (l) => {
+    if (l.type === "bottle") return `${l.amount} oz ${l.feedType || ""}`;
+    if (l.type === "poop") return `${POOP_COLORS.find(c=>c.id===l.color)?.label || ""} / ${POOP_CONSISTENCIES.find(c=>c.id===l.consistency)?.label || ""}`;
+    if (l.type === "diaper") return "Wet diaper";
+    if (l.type === "sleep") return l.subtype === "woke_up"
+      ? (l.durationMins >= 60 ? `Slept ${Math.floor((l.durationMins||0)/60)}h ${(l.durationMins||0)%60}m` : `Slept ${l.durationMins||0}m`)
+      : "Fell asleep";
+    if (l.type === "food") return `${l.foodName || ""} (${l.calories || 0} cal)`;
+    if (l.type === "medicine") return `${l.name} ${l.dose || ""}`;
+    if (l.type === "teething") return `Tooth - ${l.tooth || ""}`;
+    return l.note?.slice(0, 40) || "Note";
+  };
+
+  const openEdit = (log) => {
+    setModal(
+      <EditLogModal
+        theme={theme}
+        log={log}
+        onSave={(updated) => {
+          updateData("logs", data.logs.map(x => x.id === log.id ? { ...x, ...updated } : x));
+          showToast("✏️ Updated!");
+          setModal(null);
+        }}
+        onClose={() => setModal(null)}
+        now={now}
+      />
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <button onClick={navigateBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: theme.text }}>←</button>
+        <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>📅 History</h2>
       </div>
-    ))}
-  </div>);
+      <input type="date" value={fd} onChange={e => setFd(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 10 }} />
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {["all","bottle","poop","diaper","sleep","food","medicine","note","teething"].map(t => (
+          <button key={t} className="tab-btn" onClick={() => setFt(t)}
+            style={{ background: ft === t ? theme.accentSoft : theme.card, border: `1px solid ${ft === t ? theme.accent : theme.border}`, borderRadius: 10, padding: "6px 12px", color: ft === t ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 11, textTransform: "capitalize" }}>
+            {t}
+          </button>
+        ))}
+      </div>
+      {logs.length === 0
+        ? <p style={{ color: theme.textMuted, textAlign: "center", padding: 30 }}>No logs for this day.</p>
+        : logs.map(l => (
+          <div key={l.id} style={{ background: theme.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${theme.border}`, display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <span style={{ fontSize: 20, flexShrink: 0 }}>{logIcon(l.type)}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{logLabel(l)}</div>
+              <div style={{ fontSize: 11, color: theme.textMuted }}>{formatTime12(l.time)}</div>
+            </div>
+            <button
+              onClick={() => openEdit(l)}
+              style={{ background: theme.accentSoft, border: `1px solid ${theme.accent}40`, borderRadius: 8, padding: "6px 12px", color: theme.accent, fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+              ✏️ Edit
+            </button>
+            <button
+              onClick={() => { if (window.confirm("Delete this log?")) { updateData("logs", data.logs.filter(x => x.id !== l.id)); showToast("Deleted"); } }}
+              style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: theme.textMuted, flexShrink: 0, lineHeight: 1 }}>
+              ✕
+            </button>
+          </div>
+        ))
+      }
+    </div>
+  );
 }
 
 function ActivitiesPage({ data, theme, navigateBack }) {
