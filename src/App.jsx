@@ -217,23 +217,36 @@ const DEFAULT_REMINDERS = {
   napTimes: ["09:00", "13:00"],   // default 2 nap times
 };
 
+
+// ─── Per-user theme (localStorage, never synced to Firestore) ────────────────
+const THEME_LS_KEY = (uid) => uid ? `wieser-baby-theme-${uid}` : "wieser-baby-theme-guest";
+const getUserTheme = (uid) => {
+  try { return localStorage.getItem(THEME_LS_KEY(uid)) || "auto"; } catch { return "auto"; }
+};
+const setUserTheme = (uid, theme) => {
+  try { localStorage.setItem(THEME_LS_KEY(uid), theme); } catch {}
+};
+
 // ─── Splash theme helper ─────────────────────────────────────
 // Reads the last-used theme from localStorage so the splash screen
 // matches the user's chosen theme before data has loaded.
 function getSplashTheme() {
   try {
-    // Try to get theme from stored app data
-    const keys = Object.keys(localStorage).filter(k => k.startsWith("wieser-baby-data"));
-    for (const key of keys) {
+    // Check per-user theme keys first (format: wieser-baby-theme-{uid})
+    const themeKeys = Object.keys(localStorage).filter(k => k.startsWith("wieser-baby-theme-"));
+    for (const key of themeKeys) {
+      const t = localStorage.getItem(key);
+      if (t && t !== "auto" && THEMES[t]) return THEMES[t];
+    }
+    // Fall back to old data-embedded theme for backwards compat
+    const dataKeys = Object.keys(localStorage).filter(k => k.startsWith("wieser-baby-data"));
+    for (const key of dataKeys) {
       const d = JSON.parse(localStorage.getItem(key) || "null");
-      if (d?.settings?.theme) {
-        const t = d.settings.theme;
-        if (t === "auto") break; // fall through to system detection
-        if (THEMES[t]) return THEMES[t];
+      if (d?.settings?.theme && d.settings.theme !== "auto" && THEMES[d.settings.theme]) {
+        return THEMES[d.settings.theme];
       }
     }
   } catch {}
-  // Fall back to system preference
   const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
   return prefersDark ? THEMES.midnight : THEMES.blossom;
 }
@@ -263,8 +276,17 @@ export default function WieserBabyApp() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+  // Per-user theme stored in localStorage — read on mount, keyed to UID
+  const [userThemeKey, setUserThemeKey] = useState(() =>
+    getUserTheme(currentUser?.uid || null)
+  );
+  // When user changes, reload their theme preference
+  useEffect(() => {
+    setUserThemeKey(getUserTheme(currentUser?.uid || null));
+  }, [currentUser?.uid]);
+
   const resolvedThemeKey = (() => {
-    const t = data?.settings?.theme || "auto";
+    const t = userThemeKey || "auto";
     if (t === "auto") return sysDark ? "midnight" : "blossom";
     return THEMES[t] ? t : (sysDark ? "midnight" : "blossom");
   })();
@@ -407,7 +429,8 @@ export default function WieserBabyApp() {
 
   const todayStr = localDateStr(now);
   const todayLogs = data.logs.filter(l => l.date === todayStr);
-  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange };
+  const setThemePref = (t) => { setUserTheme(currentUser?.uid || null, t); setUserThemeKey(t); };
+  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange, userThemeKey, setThemePref };
 
   return (
     <>
@@ -1841,7 +1864,7 @@ function AIProviderSection({ theme, s, us, inputStyle }) {
   );
 }
 
-function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange }) {
+function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange, userThemeKey, setThemePref }) {
   const s = data.settings || {}, b = activeBaby || data.baby || DEFAULT_BABY;
   const us = (k, v) => updateData("settings", { ...s, [k]: v });
   const ub = (k, v) => {
@@ -1875,25 +1898,28 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Baby Profile</SectionLabel><input placeholder="Name" value={b.name === "Baby" ? "" : b.name} onChange={e => ub("name", e.target.value || "Baby")} style={{ ...inputStyle(theme), fontSize: 16, marginBottom: 10 }} /><label style={{ fontSize: 12, color: theme.textMuted, display: "block", marginBottom: 4 }}>Birth Date</label><input type="date" value={b.birthDate} onChange={e => ub("birthDate", e.target.value)} style={inputStyle(theme)} />{b.birthDate && <p style={{ fontSize: 13, color: theme.accent, marginTop: 8, fontWeight: 700 }}>{ageString(b.birthDate)}</p>}</div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
       <SectionLabel theme={theme}>Theme</SectionLabel>
-      <button onClick={() => us("theme", "auto")} style={{ width: "100%", marginBottom: 12, padding: "12px 16px", borderRadius: 14, background: s.theme === "auto" ? theme.accentSoft : theme.bg, border: `2px solid ${s.theme === "auto" ? theme.accent : theme.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+      <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
+        🔒 Your theme is saved privately on this device — it won't affect your partner's view.
+      </p>
+      <button onClick={() => setThemePref("auto")} style={{ width: "100%", marginBottom: 12, padding: "12px 16px", borderRadius: 14, background: userThemeKey === "auto" ? theme.accentSoft : theme.bg, border: `2px solid ${userThemeKey === "auto" ? theme.accent : theme.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontSize: 22 }}>✨</span>
-        <span style={{ fontSize: 14, fontWeight: 700, color: s.theme === "auto" ? theme.accent : theme.text }}>Auto (match device)</span>
-        {s.theme === "auto" && <span style={{ marginLeft: "auto", color: theme.accent }}>✓</span>}
+        <span style={{ fontSize: 14, fontWeight: 700, color: userThemeKey === "auto" ? theme.accent : theme.text }}>Auto (match device)</span>
+        {userThemeKey === "auto" && <span style={{ marginLeft: "auto", color: theme.accent }}>✓</span>}
       </button>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {Object.entries(THEMES).map(([k, t]) => (
-          <button key={k} className="card" onClick={() => us("theme", k)} style={{ background: t.bg, border: `2px solid ${s.theme === k ? t.accent : t.border}`, borderRadius: 16, padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+          <button key={k} className="card" onClick={() => setThemePref(k)} style={{ background: t.bg, border: `2px solid ${userThemeKey === k ? t.accent : t.border}`, borderRadius: 16, padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 24, height: 24, borderRadius: 8, background: t.accent }} />
             <div style={{ flex: 1, textAlign: "left" }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{t.name}</div>
               <div style={{ fontSize: 10, color: t.dark ? "#888" : "#aaa" }}>{t.dark ? "Dark" : "Light"}</div>
             </div>
-            {s.theme === k && <span style={{ color: t.accent }}>✓</span>}
+            {userThemeKey === k && <span style={{ color: t.accent }}>✓</span>}
           </button>
         ))}
       </div>
     </div>
-    <AIProviderSection theme={theme} s={s} us={us} inputStyle={inputStyle} />
+    <AIProviderSection theme={theme} s={s} us={us} inputStyle={inputStyle} userThemeKey={userThemeKey} setThemePref={setThemePref} />
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{[{p:"growth",i:"📏",l:"Growth"},{p:"activities",i:"🎯",l:"Activities"},{p:"pooplog",i:"💩",l:"Poop Log"},{p:"family",i:"👨‍👩‍👦",l:"Family"}].map(x => (<button key={x.p} className="log-btn" onClick={() => navigate(x.p)} style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, cursor: "pointer", textAlign: "center" }}><span style={{ fontSize: 22 }}>{x.i}</span><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{x.l}</div></button>))}</div>
     {currentUser && !currentUser.isAnonymous && (
       <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
