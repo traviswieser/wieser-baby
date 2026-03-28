@@ -593,7 +593,7 @@ const logIcon = (type) => ({ bottle: "🍼", poop: "💩", diaper: "💧", sleep
 function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, updateData, now, navigate, showToast }) {
   const bottles = todayLogs.filter(l => l.type === "bottle");
   const poops = todayLogs.filter(l => l.type === "poop");
-  const wets = todayLogs.filter(l => l.type === "diaper");
+  const wets = todayLogs.filter(l => l.type === "diaper" || (l.type === "poop" && l.combined));
   const sleeps = todayLogs.filter(l => l.type === "sleep");
   const foods = todayLogs.filter(l => l.type === "food");
   const totalOz = bottles.reduce((s, b) => s + (b.amount || 0), 0);
@@ -670,7 +670,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <QuickLogButton icon="🍼" label="Bottle" sublabel={timeAgo(lastBottle) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<BottleModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (timeAgo(lastSleep) || "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
-        <QuickLogButton icon="💩" label="Poop" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.warning} theme={theme} onClick={() => setModal(<PoopModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
+        <QuickLogButton icon="💩" label="Poop" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.warning} theme={theme} onClick={() => setModal(<PoopModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} includeWet />)} />
         <QuickLogButton icon="🍎" label="Food" sublabel={timeAgo(lastFood) || "not yet today"} color={theme.success} theme={theme} onClick={() => setModal(<FoodLogModal theme={theme} addLog={addLog} data={data} updateData={updateData} todayStr={todayStr} now={now} showToast={showToast} />)} />
       </div>
 
@@ -708,7 +708,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
-        <QuickAction icon="💧" label="Wet" theme={theme} onClick={() => addLog({ type: "diaper", subtype: "wet", date: todayStr, time: localTimeStr(now) })} />
+        <QuickAction icon="💧" label="Diaper" theme={theme} onClick={() => setModal(<DiaperModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="💊" label="Meds" theme={theme} onClick={() => setModal(<MedicineModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="📝" label="Note" theme={theme} onClick={() => setModal(<NoteModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="🦷" label="Teeth" theme={theme} onClick={() => setModal(<TeethingModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
@@ -766,16 +766,76 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
   );
 }
 
+// ─── DIAPER MODAL ────────────────────────────────────────────
+function DiaperModal({ theme, addLog, todayStr, now }) {
+  const [time, setTime] = useState(localTimeStr(now));
+  const [hasWet, setHasWet] = useState(true);
+  const [hasPoop, setHasPoop] = useState(false);
+
+  const logIt = () => {
+    if (hasPoop) {
+      // Open the poop wizard with wet pre-selected
+      // We handle this by closing and opening PoopModal — but since we can't
+      // nest modals, we just log the wet diaper and let the poop wizard handle poop
+    }
+    if (hasWet) addLog({ type: "diaper", subtype: "wet", date: todayStr, time });
+    if (!hasPoop) return; // wet-only: done
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>💧 Log Diaper</h2>
+
+      {/* Type toggle */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+        <button onClick={() => setHasWet(v => !v)}
+          style={{ flex: 1, padding: "16px 10px", borderRadius: 16, textAlign: "center", background: hasWet ? "rgba(126,184,218,0.18)" : theme.bg, border: `2px solid ${hasWet ? theme.info : theme.border}`, cursor: "pointer" }}>
+          <div style={{ fontSize: 28 }}>💧</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: hasWet ? theme.info : theme.textMuted, marginTop: 4 }}>Pee</div>
+        </button>
+        <button onClick={() => setHasPoop(v => !v)}
+          style={{ flex: 1, padding: "16px 10px", borderRadius: 16, textAlign: "center", background: hasPoop ? `${theme.warning}22` : theme.bg, border: `2px solid ${hasPoop ? theme.warning : theme.border}`, cursor: "pointer" }}>
+          <div style={{ fontSize: 28 }}>💩</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: hasPoop ? theme.warning : theme.textMuted, marginTop: 4 }}>Poop</div>
+        </button>
+      </div>
+      {(!hasWet && !hasPoop) && (
+        <p style={{ fontSize: 12, color: "#e57373", textAlign: "center", marginBottom: 12 }}>Select at least one.</p>
+      )}
+
+      <input type="time" value={time} onChange={e => setTime(e.target.value)}
+        style={{ ...inputStyle(theme), marginBottom: 16 }} />
+
+      <button
+        disabled={!hasWet && !hasPoop}
+        onClick={() => {
+          if (hasWet) addLog({ type: "diaper", subtype: "wet", date: todayStr, time });
+          if (hasPoop) addLog({ type: "poop", subtype: "combined", date: todayStr, time, combined: true });
+        }}
+        style={{ width: "100%", padding: 16, borderRadius: 16, background: (hasWet || hasPoop) ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: (hasWet || hasPoop) ? "pointer" : "default" }}>
+        Log {hasWet && hasPoop ? "Pee + Poop 💧💩" : hasWet ? "Wet Diaper 💧" : "Poop Diaper 💩"}
+      </button>
+
+      {hasPoop && (
+        <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 10, lineHeight: 1.5 }}>
+          💡 Tap the big Poop button to record color & consistency details.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ENHANCED POOP MODAL (3-step wizard)
 // ═══════════════════════════════════════════════════════════════
-function PoopModal({ theme, addLog, todayStr, now }) {
+function PoopModal({ theme, addLog, todayStr, now, includeWet }) {
   const [step, setStep] = useState(1);
   const [color, setColor] = useState("");
   const [consistency, setConsistency] = useState("");
   const [amount, setAmount] = useState("medium");
   const [notes, setNotes] = useState("");
   const [time, setTime] = useState(localTimeStr(now));
+  const [alsoWet, setAlsoWet] = useState(!!includeWet);
 
   const ci = POOP_COLORS.find(c => c.id === color);
   const co = POOP_CONSISTENCIES.find(c => c.id === consistency);
@@ -847,9 +907,25 @@ function PoopModal({ theme, addLog, todayStr, now }) {
           <input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
           <input placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} style={{ ...inputStyle(theme), flex: 2 }} />
         </div>
+        {/* Also wet toggle */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: theme.bg, borderRadius: 14, padding: "12px 16px", marginBottom: 8 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>💧 Also wet?</div>
+            <div style={{ fontSize: 11, color: theme.textMuted }}>Log a wet diaper at the same time</div>
+          </div>
+          <button onClick={() => setAlsoWet(v => !v)}
+            style={{ width: 48, height: 28, borderRadius: 14, background: alsoWet ? theme.accent : theme.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+            <span style={{ position: "absolute", top: 3, left: alsoWet ? 22 : 4, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
+          </button>
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setStep(2)} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>← Back</button>
-          <button onClick={() => addLog({ type: "poop", color, consistency, amount, notes, date: todayStr, time })} style={{ flex: 2, padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>💩 Log Poop</button>
+          <button onClick={() => {
+            addLog({ type: "poop", color, consistency, amount, notes, date: todayStr, time });
+            if (alsoWet) addLog({ type: "diaper", subtype: "wet", date: todayStr, time });
+          }} style={{ flex: 2, padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
+            {alsoWet ? "💩💧 Log Both" : "💩 Log Poop"}
+          </button>
         </div>
       </div>)}
     </div>
@@ -2504,7 +2580,7 @@ function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModa
   const logLabel = (l) => {
     if (l.type === "bottle") return `${l.amount} oz ${l.feedType || ""}`;
     if (l.type === "poop") return `${POOP_COLORS.find(c=>c.id===l.color)?.label || ""} / ${POOP_CONSISTENCIES.find(c=>c.id===l.consistency)?.label || ""}`;
-    if (l.type === "diaper") return "Wet diaper";
+    if (l.type === "diaper") return "Wet diaper";  // combined handled by poop label
     if (l.type === "sleep") return l.subtype === "woke_up"
       ? (l.durationMins >= 60 ? `Slept ${Math.floor((l.durationMins||0)/60)}h ${(l.durationMins||0)%60}m` : `Slept ${l.durationMins||0}m`)
       : "Fell asleep";
