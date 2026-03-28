@@ -2087,6 +2087,154 @@ function AIProviderSection({ theme, s, us, inputStyle }) {
   );
 }
 
+// ─── DATA SECTION (Export / Import / Clear) ──────────────────
+function DataSection({ theme, data, updateData, showToast }) {
+  const fileRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [preview, setPreview] = useState(null); // { logs, milestones, growthRecords, ... }
+  const [error, setError] = useState("");
+
+  const doExport = () => {
+    const bl = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const u = URL.createObjectURL(bl);
+    const a = document.createElement("a");
+    a.href = u; a.download = `wieser-baby-${localDateStr()}.json`; a.click();
+    URL.revokeObjectURL(u);
+    showToast("Downloaded!");
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(""); setPreview(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const imported = JSON.parse(ev.target.result);
+        if (!imported || typeof imported !== "object") throw new Error("Invalid file");
+        // Build a preview of what will be merged
+        const newLogs        = (imported.logs || []).filter(il => !data.logs.find(dl => dl.id === il.id));
+        const newGrowth      = (imported.growthRecords || []).filter(ig => !(data.growthRecords || []).find(dg => dg.id === ig.id));
+        const newPedNotes    = (imported.pediatricianNotes || []).filter(ip => !(data.pediatricianNotes || []).find(dp => dp.id === ip.id));
+        const newMilestones  = Object.fromEntries(
+          Object.entries(imported.milestones || {}).filter(([k]) => !(data.milestones || {})[k])
+        );
+        const newFamilyUpdates = (imported.familyUpdates || []).filter(iu => !(data.familyUpdates || []).find(du => du.id === iu.id));
+        setPreview({ newLogs, newGrowth, newPedNotes, newMilestones, newFamilyUpdates, raw: imported });
+      } catch {
+        setError("Could not read file — make sure it's a Wieser Baby export JSON.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const doMerge = () => {
+    if (!preview) return;
+    const { newLogs, newGrowth, newPedNotes, newMilestones, newFamilyUpdates, raw } = preview;
+    // Merge logs
+    if (newLogs.length > 0)
+      updateData("logs", [...(data.logs || []), ...newLogs]);
+    // Merge growth records
+    if (newGrowth.length > 0)
+      updateData("growthRecords", [...(data.growthRecords || []), ...newGrowth]);
+    // Merge pediatrician notes
+    if (newPedNotes.length > 0)
+      updateData("pediatricianNotes", [...(data.pediatricianNotes || []), ...newPedNotes]);
+    // Merge milestones (only keys not already set)
+    if (Object.keys(newMilestones).length > 0)
+      updateData("milestones", { ...(data.milestones || {}), ...newMilestones });
+    // Merge family updates / digests
+    if (newFamilyUpdates.length > 0)
+      updateData("familyUpdates", [...(data.familyUpdates || []), ...newFamilyUpdates]);
+    // Merge food preferences (union of likes/dislikes)
+    const impLikes    = raw.foodPreferences?.likes    || [];
+    const impDislikes = raw.foodPreferences?.dislikes || [];
+    const curPrefs    = data.foodPreferences || { likes: [], dislikes: [] };
+    const mergedLikes    = [...new Set([...curPrefs.likes,    ...impLikes])];
+    const mergedDislikes = [...new Set([...curPrefs.dislikes, ...impDislikes])];
+    if (impLikes.length || impDislikes.length)
+      updateData("foodPreferences", { likes: mergedLikes, dislikes: mergedDislikes });
+
+    const total = newLogs.length + newGrowth.length + newPedNotes.length + Object.keys(newMilestones).length;
+    showToast(`✅ Merged ${total} new items!`);
+    setPreview(null);
+  };
+
+  return (
+    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+      <SectionLabel theme={theme}>Data</SectionLabel>
+
+      {/* Export + Clear row */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <button onClick={doExport}
+          style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          📦 Export
+        </button>
+        <button onClick={() => { if (window.confirm("Clear ALL data? This cannot be undone.")) { updateData("logs",[]); updateData("milestones",{}); updateData("growthRecords",[]); updateData("familyUpdates",[]); updateData("pediatricianNotes",[]); updateData("foodPreferences",{likes:[],dislikes:[]}); showToast("Cleared"); } }}
+          style={{ flex: 1, padding: 14, borderRadius: 14, background: "rgba(229,115,115,0.1)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          🗑️ Clear
+        </button>
+      </div>
+
+      {/* Import / Merge */}
+      <div style={{ background: theme.bg, borderRadius: 16, padding: 16, border: `1px solid ${theme.border}` }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: theme.text, marginBottom: 4 }}>📥 Import & Merge</div>
+        <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+          Transfer logs from another device or the GitHub Pages version. Select an exported JSON file — existing data won't be overwritten, only new items are added.
+        </p>
+
+        {!preview && (
+          <>
+            <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleFile} style={{ display: "none" }} />
+            <button onClick={() => fileRef.current?.click()}
+              style={{ width: "100%", padding: 13, borderRadius: 12, background: theme.accentSoft, border: `1px solid ${theme.accent}`, color: theme.accent, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              📂 Choose Export File…
+            </button>
+            {error && <p style={{ fontSize: 12, color: "#e57373", marginTop: 8, textAlign: "center" }}>{error}</p>}
+          </>
+        )}
+
+        {preview && (
+          <div style={{ animation: "fadeIn 0.2s" }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: theme.text, marginBottom: 10 }}>Ready to merge:</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+              {[
+                ["📝 Logs", preview.newLogs.length],
+                ["📏 Growth records", preview.newGrowth.length],
+                ["🩺 Doctor notes", preview.newPedNotes.length],
+                ["⭐ Milestones", Object.keys(preview.newMilestones).length],
+                ["🤖 Digests", preview.newFamilyUpdates.length],
+              ].map(([label, count]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <span style={{ color: theme.textMuted }}>{label}</span>
+                  <span style={{ fontWeight: 800, color: count > 0 ? theme.success : theme.textMuted }}>
+                    {count > 0 ? `+${count} new` : "nothing new"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {(preview.newLogs.length + preview.newGrowth.length + preview.newPedNotes.length + Object.keys(preview.newMilestones).length) === 0
+              ? <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 10 }}>Everything in this file is already here — nothing to import.</p>
+              : null
+            }
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setPreview(null)}
+                style={{ flex: 1, padding: 12, borderRadius: 12, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={doMerge}
+                style={{ flex: 2, padding: 12, borderRadius: 12, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 14, border: "none", cursor: "pointer" }}>
+                ✅ Merge Into This Account
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Notification UI helpers ──────────────────────────────────
 function NotifToggleRow({ label, icon, sub, enabled, onToggle, theme, last }) {
   return (
@@ -2291,7 +2439,7 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
         </div>
       )}
     </div>
-    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Data</SectionLabel><div style={{ display: "flex", gap: 10 }}><button onClick={() => { const bl = new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const u = URL.createObjectURL(bl); const a = document.createElement("a"); a.href = u; a.download = `wieser-baby-${localDateStr()}.json`; a.click(); URL.revokeObjectURL(u); showToast("Downloaded!"); }} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>📦 Export</button><button onClick={() => { if (window.confirm("Clear ALL data?")) { updateData("logs",[]); updateData("milestones",{}); updateData("growthRecords",[]); updateData("familyUpdates",[]); updateData("pediatricianNotes",[]); updateData("foodPreferences",{likes:[],dislikes:[]}); showToast("Cleared"); } }} style={{ flex: 1, padding: 14, borderRadius: 14, background: "rgba(229,115,115,0.1)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🗑️ Clear</button></div></div>
+    <DataSection theme={theme} data={data} updateData={updateData} showToast={showToast} />
     <div style={{ textAlign: "center", padding: 20, color: theme.textMuted }}><p style={{ fontFamily: "'Fredoka'", fontSize: 16 }}><span style={{ color: theme.accent }}>Wieser</span> Baby</p><p style={{ fontSize: 12, marginTop: 4 }}>v{APP_VERSION}</p></div>
   </div>);
 }
