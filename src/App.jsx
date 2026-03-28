@@ -217,6 +217,27 @@ const DEFAULT_REMINDERS = {
   napTimes: ["09:00", "13:00"],   // default 2 nap times
 };
 
+// ─── Splash theme helper ─────────────────────────────────────
+// Reads the last-used theme from localStorage so the splash screen
+// matches the user's chosen theme before data has loaded.
+function getSplashTheme() {
+  try {
+    // Try to get theme from stored app data
+    const keys = Object.keys(localStorage).filter(k => k.startsWith("wieser-baby-data"));
+    for (const key of keys) {
+      const d = JSON.parse(localStorage.getItem(key) || "null");
+      if (d?.settings?.theme) {
+        const t = d.settings.theme;
+        if (t === "auto") break; // fall through to system detection
+        if (THEMES[t]) return THEMES[t];
+      }
+    }
+  } catch {}
+  // Fall back to system preference
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+  return prefersDark ? THEMES.midnight : THEMES.blossom;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
@@ -335,11 +356,18 @@ export default function WieserBabyApp() {
   const updateData = (key, value) => setData(d => ({ ...d, [key]: value }));
 
   // Not yet checked auth — show a simple splash while Firebase resolves
-  if (currentUser === undefined) return (
-    <div style={{ background: "#07080d", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
-      <div style={{ fontSize: 56, animation: "pulse 1.5s ease-in-out infinite" }}>👶</div>
-    </div>
-  );
+  if (currentUser === undefined) {
+    const st = getSplashTheme();
+    return (
+      <div style={{ background: st.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
+        <img src="/icon-512.png" alt="" style={{ width: 96, height: 96, borderRadius: 24, animation: "pulse 1.5s ease-in-out infinite" }} />
+        <div style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 26, fontWeight: 700 }}>
+          <span style={{ color: st.accent }}>Wieser</span>
+          <span style={{ color: st.text }}> Baby</span>
+        </div>
+      </div>
+    );
+  }
 
   // Signed out — show auth screen
   if (!currentUser) {
@@ -363,12 +391,19 @@ export default function WieserBabyApp() {
     );
   }
 
-  if (loading || !data) return (
-    <div style={{ background: "#07080d", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
-      <div style={{ fontSize: 48, animation: "pulse 1.5s ease-in-out infinite" }}>👶</div>
-      <div style={{ color: "#7a7d8c", fontFamily: "'Nunito', sans-serif", fontSize: 14 }}>Loading Wieser Baby...</div>
-    </div>
-  );
+  if (loading || !data) {
+    const st = getSplashTheme();
+    return (
+      <div style={{ background: st.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
+        <img src="/icon-512.png" alt="" style={{ width: 96, height: 96, borderRadius: 24, animation: "pulse 1.5s ease-in-out infinite" }} />
+        <div style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 26, fontWeight: 700 }}>
+          <span style={{ color: st.accent }}>Wieser</span>
+          <span style={{ color: st.text }}> Baby</span>
+        </div>
+        <div style={{ color: st.textMuted, fontFamily: "'Nunito', sans-serif", fontSize: 13, marginTop: 4 }}>Loading…</div>
+      </div>
+    );
+  }
 
   const todayStr = localDateStr(now);
   const todayLogs = data.logs.filter(l => l.date === todayStr);
