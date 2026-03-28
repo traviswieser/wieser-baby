@@ -1360,6 +1360,141 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
   </div>);
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// EDIT LOG MODAL — handles all log types
+// ═══════════════════════════════════════════════════════════════
+function EditLogModal({ theme, log, onSave, onClose, now }) {
+  const is = inputStyle(theme);
+  const [fields, setFields] = useState({ ...log });
+  const set = (k, v) => setFields(f => ({ ...f, [k]: v }));
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4, textAlign: "center" }}>
+        ✏️ Edit {log.type.charAt(0).toUpperCase() + log.type.slice(1)}
+      </h2>
+      <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 20 }}>{log.date} · {formatTime12(log.time)}</p>
+
+      {/* Date + time — common to all */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>DATE</label>
+          <input type="date" value={fields.date || ""} onChange={e => set("date", e.target.value)} style={is} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>TIME</label>
+          <input type="time" value={fields.time || ""} onChange={e => set("time", e.target.value)} style={is} />
+        </div>
+      </div>
+
+      {/* ── Bottle ── */}
+      {log.type === "bottle" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>AMOUNT (oz)</label>
+            <input type="number" step="0.5" value={fields.amount || ""} onChange={e => set("amount", parseFloat(e.target.value))} style={{ ...is, fontSize: 20, textAlign: "center" }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 6 }}>TYPE</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {["formula","breast","milk","water","juice"].map(t => (
+                <button key={t} onClick={() => set("feedType", t)} style={{ padding: "8px 14px", borderRadius: 10, background: fields.feedType === t ? theme.accentSoft : theme.bg, border: `1px solid ${fields.feedType === t ? theme.accent : theme.border}`, color: fields.feedType === t ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sleep ── */}
+      {log.type === "sleep" && log.subtype === "woke_up" && (
+        <div>
+          <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>DURATION (minutes)</label>
+          <input type="number" value={fields.durationMins || ""} onChange={e => set("durationMins", parseInt(e.target.value))} style={{ ...is, fontSize: 20, textAlign: "center" }} />
+          {fields.durationMins >= 60 && <p style={{ fontSize: 12, color: theme.accent, marginTop: 6, textAlign: "center" }}>{Math.floor(fields.durationMins/60)}h {fields.durationMins%60}m</p>}
+        </div>
+      )}
+
+      {/* ── Food ── */}
+      {log.type === "food" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <input placeholder="Food name" value={fields.foodName || ""} onChange={e => set("foodName", e.target.value)} style={{ ...is, fontWeight: 700 }} />
+          <input placeholder="Serving size" value={fields.servingSize || ""} onChange={e => set("servingSize", e.target.value)} style={is} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            {[["calories","Cal"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fiber","Fiber g"],["sugar","Sugar g"]].map(([k, lbl]) => (
+              <div key={k}>
+                <label style={{ fontSize: 10, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 2 }}>{lbl.toUpperCase()}</label>
+                <input type="number" step="0.1" value={fields[k] || ""} onChange={e => set(k, parseFloat(e.target.value) || 0)} style={is} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Medicine ── */}
+      {log.type === "medicine" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <input placeholder="Medicine name" value={fields.name || ""} onChange={e => set("name", e.target.value)} style={is} />
+          <input placeholder="Dose" value={fields.dose || ""} onChange={e => set("dose", e.target.value)} style={is} />
+        </div>
+      )}
+
+      {/* ── Poop ── */}
+      {log.type === "poop" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 6 }}>COLOR</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {POOP_COLORS.map(c => (
+                <button key={c.id} onClick={() => set("color", c.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 10, background: fields.color === c.id ? `${c.hex}20` : theme.bg, border: `2px solid ${fields.color === c.id ? c.hex : theme.border}`, cursor: "pointer" }}>
+                  <div style={{ width: 14, height: 14, borderRadius: 4, background: c.hex }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: theme.text }}>{c.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 6 }}>CONSISTENCY</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {POOP_CONSISTENCIES.map(c => (
+                <button key={c.id} onClick={() => set("consistency", c.id)} style={{ padding: "6px 10px", borderRadius: 10, background: fields.consistency === c.id ? theme.accentSoft : theme.bg, border: `1px solid ${fields.consistency === c.id ? theme.accent : theme.border}`, cursor: "pointer", fontSize: 12, fontWeight: 700, color: fields.consistency === c.id ? theme.accent : theme.textMuted }}>
+                  {c.emoji} {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <input placeholder="Notes" value={fields.notes || ""} onChange={e => set("notes", e.target.value)} style={is} />
+        </div>
+      )}
+
+      {/* ── Note ── */}
+      {log.type === "note" && (
+        <textarea rows={4} value={fields.note || ""} onChange={e => set("note", e.target.value)} style={{ ...is, resize: "none" }} />
+      )}
+
+      {/* ── Teething ── */}
+      {log.type === "teething" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 6 }}>TOOTH</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {["Bottom center L","Bottom center R","Top center L","Top center R","Bottom lateral L","Bottom lateral R","Top lateral L","Top lateral R","1st molar","Canine","2nd molar"].map(t => (
+                <button key={t} onClick={() => set("tooth", t)} style={{ padding: "6px 10px", borderRadius: 10, background: fields.tooth === t ? theme.accentSoft : theme.bg, border: `1px solid ${fields.tooth === t ? theme.accent : theme.border}`, cursor: "pointer", fontSize: 11, fontWeight: 700, color: fields.tooth === t ? theme.accent : theme.textMuted }}>{t}</button>
+              ))}
+            </div>
+          </div>
+          <input placeholder="Symptoms" value={fields.symptoms || ""} onChange={e => set("symptoms", e.target.value)} style={is} />
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+        <button onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Cancel</button>
+        <button onClick={() => onSave(fields)} style={{ flex: 2, padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 15, border: "none", cursor: "pointer" }}>Save Changes</button>
+      </div>
+    </div>
+  );
+}
+
 function HistoryPage({ data, theme, updateData, navigateBack, showToast }) {
   const [fd, setFd] = useState(localDateStr()); const [ft, setFt] = useState("all");
   const logs = data.logs.filter(l => l.date === fd && (ft === "all" || l.type === ft));
