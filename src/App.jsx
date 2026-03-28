@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
-import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData } from "./firebase.js";
+import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut, getCurrentUser, checkRedirectResult } from "./firebase.js";
+import AuthScreen from "./AuthScreen.jsx";
 import BarcodeScanner from "./BarcodeScanner.jsx";
 import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders } from "./notifications.js";
 import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
@@ -201,6 +202,7 @@ const DEFAULT_REMINDERS = {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function WieserBabyApp() {
+  const [currentUser, setCurrentUser] = useState(undefined); // undefined = loading, null = signed out
   const [page, setPage] = useState("dashboard");
   const [pageHistory, setPageHistory] = useState([]);
   const [data, setData] = useState(null);
@@ -229,25 +231,32 @@ export default function WieserBabyApp() {
 
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(i); }, []);
 
-  // Load from Firebase on mount + subscribe to real-time updates (caregiver sync)
+  // Check auth state on mount, then load data
   useEffect(() => {
     let unsub = null;
+    let dataUnsub = null;
     (async () => {
+      // Handle Google redirect result first (mobile OAuth flow)
+      await checkRedirectResult();
+      // Get current auth state
+      const user = await getCurrentUser();
+      setCurrentUser(user); // null = not signed in, object = signed in
+      if (!user) { setLoading(false); return; }
+
       const raw = await loadData();
       const d = migrateData(raw) || JSON.parse(JSON.stringify(DEFAULT_DATA));
       setData(d);
       setLoading(false);
-      // Subscribe to live updates after initial load
+
       const uid = await getUid();
-      unsub = subscribeToUserData(uid, (fresh) => {
+      dataUnsub = subscribeToUserData(uid, (fresh) => {
         setData(prev => {
-          // Only update if the incoming data is actually different (avoid save loops)
           if (JSON.stringify(prev) !== JSON.stringify(fresh)) return fresh;
           return prev;
         });
       });
     })();
-    return () => { if (unsub) unsub(); };
+    return () => { if (dataUnsub) dataUnsub(); };
   }, []);
 
   useEffect(() => { if (data && !loading) saveData(data); }, [data, loading]);
@@ -274,6 +283,33 @@ export default function WieserBabyApp() {
   };
   const updateData = (key, value) => setData(d => ({ ...d, [key]: value }));
 
+  // Not yet checked auth — show a simple splash while Firebase resolves
+  if (currentUser === undefined) return (
+    <div style={{ background: "#07080d", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
+      <div style={{ fontSize: 56, animation: "pulse 1.5s ease-in-out infinite" }}>👶</div>
+    </div>
+  );
+
+  // Signed out — show auth screen
+  if (!currentUser) return (
+    <AuthScreen
+      theme={THEMES.midnight}
+      onSignedIn={(user) => {
+        setCurrentUser(user);
+        // Reset data and reload for the newly signed-in user
+        setData(null);
+        setLoading(true);
+        getUid().then(uid => {
+          loadUserData(uid).then(raw => {
+            const d = migrateData(raw) || JSON.parse(JSON.stringify(DEFAULT_DATA));
+            setData(d);
+            setLoading(false);
+          });
+        });
+      }}
+    />
+  );
+
   if (loading || !data) return (
     <div style={{ background: "#07080d", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
       <div style={{ fontSize: 48, animation: "pulse 1.5s ease-in-out infinite" }}>👶</div>
@@ -283,7 +319,7 @@ export default function WieserBabyApp() {
 
   const todayStr = localDateStr(now);
   const todayLogs = data.logs.filter(l => l.date === todayStr);
-  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission };
+  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser };
 
   return (
     <>
@@ -1062,7 +1098,7 @@ function CoPilotPage({ data, theme, updateData, showToast }) {
   </div>);
 }
 
-function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission }) {
+function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser }) {
   const s = data.settings || {}, b = activeBaby || data.baby || DEFAULT_BABY;
   const us = (k, v) => updateData("settings", { ...s, [k]: v });
   const ub = (k, v) => {
@@ -1072,6 +1108,35 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
   };
   return (<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
     <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>⚙️ Settings</h2>
+
+    {/* Account card */}
+    {currentUser && (
+      <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 48, height: 48, borderRadius: "50%", background: theme.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, overflow: "hidden" }}>
+          {currentUser.photoURL
+            ? <img src={currentUser.photoURL} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : "👤"}
+        </div>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {currentUser.displayName || "My Account"}
+          </div>
+          <div style={{ fontSize: 12, color: theme.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {currentUser.email || (currentUser.isAnonymous ? "Anonymous user" : "")}
+          </div>
+        </div>
+        <button
+          onClick={async () => {
+            if (!window.confirm("Sign out?")) return;
+            await logOut();
+            setCurrentUser(null);
+          }}
+          style={{ padding: "8px 14px", borderRadius: 10, background: "rgba(229,115,115,0.12)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}
+        >
+          Sign Out
+        </button>
+      </div>
+    )}
     {(data.babies||[]).length > 1 && (
       <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
         <SectionLabel theme={theme}>Babies</SectionLabel>
