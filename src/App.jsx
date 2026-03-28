@@ -4,7 +4,7 @@ import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut
 import AuthScreen from "./AuthScreen.jsx";
 import HouseholdSync from "./HouseholdSync.jsx";
 import BarcodeScanner from "./BarcodeScanner.jsx";
-import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders } from "./notifications.js";
+import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders, scheduleNapReminders, cancelNapReminders } from "./notifications.js";
 import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
 
 // ─── Constants & Config ───────────────────────────────────────
@@ -299,11 +299,18 @@ export default function WieserBabyApp() {
   // Sync reminders whenever settings change
   useEffect(() => {
     localStorage.setItem("wieser-baby-reminders", JSON.stringify(reminders));
-    if (data) syncReminders(data, reminders);
+    if (data) {
+      syncReminders(data, reminders);
+      if (reminders.napEnabled && (reminders.napTimes || []).length > 0) {
+        scheduleNapReminders(reminders.napTimes, activeBaby?.name || "baby");
+      } else {
+        cancelNapReminders();
+      }
+    }
   }, [reminders, data]);
 
   // Cleanup all reminders on unmount
-  useEffect(() => () => cancelAllReminders(), []);
+  useEffect(() => () => { cancelAllReminders(); cancelNapReminders(); }, []);
 
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
 

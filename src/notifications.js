@@ -104,3 +104,48 @@ export function syncReminders(data, reminders) {
     cancelReminder("medicine");
   }
 }
+
+// ─── Nap Reminder Scheduler ───────────────────────────────────
+// Schedules daily-style nap reminders at specific times.
+// Since we can't persist across app restarts without a push server,
+// we check the current time and schedule the next occurrence today.
+
+const napTimers = new Map();
+
+/**
+ * Cancel all nap reminders.
+ */
+export function cancelNapReminders() {
+  napTimers.forEach(t => clearTimeout(t));
+  napTimers.clear();
+}
+
+/**
+ * Schedule nap reminders for a list of HH:MM time strings.
+ * Each reminder fires once today if it hasn't passed yet,
+ * then repeats every 24h from that point.
+ */
+export function scheduleNapReminders(napTimes = [], babyName = "baby") {
+  cancelNapReminders();
+  napTimes.forEach((timeStr, idx) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    const now = new Date();
+    const target = new Date();
+    target.setHours(h, m, 0, 0);
+    // If the time has already passed today, schedule for tomorrow
+    if (target <= now) target.setDate(target.getDate() + 1);
+    const msUntil = target - now;
+    const timer = setTimeout(() => {
+      sendNotification(
+        "😴 Nap time!",
+        `It's ${timeStr} — time for ${babyName}'s nap!`
+      );
+      // Reschedule every 24 hours
+      const daily = setInterval(() => {
+        sendNotification("😴 Nap time!", `It's ${timeStr} — time for ${babyName}'s nap!`);
+      }, 24 * 60 * 60 * 1000);
+      napTimers.set(`nap_${idx}_daily`, daily);
+    }, msUntil);
+    napTimers.set(`nap_${idx}`, timer);
+  });
+}
