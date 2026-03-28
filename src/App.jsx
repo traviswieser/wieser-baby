@@ -8,7 +8,7 @@ import { requestNotificationPermission, getNotificationPermission, syncReminders
 import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
 
 // ─── Constants & Config ───────────────────────────────────────
-const APP_VERSION = "2.7.2";
+const APP_VERSION = "2.7.3";
 const THEMES = {
   midnight: { bg: "#07080d", card: "#12141c", cardHover: "#1a1d28", border: "#1e2130", accent: "#f4845f", accentSoft: "rgba(244,132,95,0.15)", text: "#e8e6e3", textMuted: "#7a7d8c", success: "#88d8b0", warning: "#f6ae2d", info: "#7eb8da", purple: "#b8a9c9", name: "Midnight", dark: true },
   ocean: { bg: "#060d14", card: "#0c1a28", cardHover: "#122234", border: "#1a2e42", accent: "#4fc3f7", accentSoft: "rgba(79,195,247,0.15)", text: "#dce8f0", textMuted: "#5a7a90", success: "#81c784", warning: "#ffb74d", info: "#64b5f6", purple: "#ab99c7", name: "Ocean", dark: true },
@@ -601,12 +601,16 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
 
   // Sort by actual recorded time (date+time), falling back to entry timestamp
   const logActualTime = (l) => (l.date && l.time) ? `${l.date}T${l.time}` : (l.timestamp || "");
-  const lastBottle  = [...bottles].sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  const lastPoop    = [...poops].sort((a,b)   => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  const lastFood    = [...foods].filter(f => f.source !== "bottle").sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  // Search ALL logs (not just today) for the most recent completed woke_up sleep
+  const lastBottle  = [...bottles].filter(isPast).sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastPoop    = [...poops].filter(isPast).sort((a,b)   => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastFood    = [...foods].filter(f => f.source !== "bottle" && isPast(f)).sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  // Search ALL logs for the most recent completed event, excluding future-dated logs
+  const isPast = (l) => {
+    const t = logActualTime(l);
+    return t ? t <= `${localDateStr(now)}T${localTimeStr(now)}` : true;
+  };
   const lastSleep = [...(data.logs || [])]
-    .filter(l => l.type === "sleep" && l.subtype === "woke_up" && l.date && l.time)
+    .filter(l => l.type === "sleep" && l.subtype === "woke_up" && l.date && l.time && isPast(l))
     .sort((a, b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
 
   const timeAgo = (log) => {
@@ -617,6 +621,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       ? new Date(`${log.date}T${log.time}:00`)
       : new Date(log.timestamp);
     const m = Math.floor((now - logTime) / 60000);
+    if (m < 0) return null;   // future-dated log — ignore
     if (m < 1) return "just now";
     if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60), mins = m % 60;
