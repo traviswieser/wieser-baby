@@ -213,6 +213,8 @@ const DEFAULT_REMINDERS = {
   feedingEnabled: false,
   feedingMins: 180,     // 3 hours
   medicineEnabled: false,
+  napEnabled: false,
+  napTimes: ["09:00", "13:00"],   // default 2 nap times
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -866,17 +868,75 @@ function FoodPrefsTab({ prefs, data, updateData, theme, showToast }) {
 }
 
 // ─── FOOD LOG MODAL ───────────────────────────────────────────
+const DEFAULT_QUICK_FOODS = [
+  {n:"Banana",c:89,p:1,ca:23,f:0,fi:3,s:12,sv:"1 medium"},
+  {n:"Avocado",c:80,p:1,ca:4,f:7,fi:3,s:0,sv:"1/4"},
+  {n:"Sweet Potato",c:86,p:2,ca:20,f:0,fi:3,s:4,sv:"1/2 cup"},
+  {n:"Yogurt",c:60,p:3,ca:7,f:2,fi:0,s:5,sv:"1/4 cup"},
+  {n:"Cheerios",c:70,p:2,ca:14,f:1,fi:2,s:1,sv:"1/2 cup"},
+  {n:"Apple Sauce",c:50,p:0,ca:14,f:0,fi:1,s:11,sv:"1/4 cup"},
+  {n:"Egg",c:70,p:6,ca:0,f:5,fi:0,s:0,sv:"1 egg"},
+  {n:"PB",c:95,p:4,ca:3,f:8,fi:1,s:2,sv:"1 tbsp"},
+  {n:"Rice Cereal",c:60,p:1,ca:13,f:0,fi:0,s:1,sv:"1/4 cup"},
+  {n:"Puffs",c:25,p:0,ca:5,f:0,fi:0,s:0,sv:"7 pcs"},
+];
+
 function FoodLogModal({ theme, addLog, data, updateData, todayStr, now, showToast }) {
   const [fn, setFn] = useState(""); const [ss, setSs] = useState(""); const [cal, setCal] = useState(""); const [pro, setPro] = useState(""); const [carb, setCarb] = useState(""); const [fat, setFat] = useState(""); const [fib, setFib] = useState(""); const [sug, setSug] = useState(""); const [time, setTime] = useState(localTimeStr(now)); const [rx, setRx] = useState("");
-  const qf = [{n:"Banana",c:89,p:1,ca:23,f:0,fi:3,s:12,sv:"1 medium"},{n:"Avocado",c:80,p:1,ca:4,f:7,fi:3,s:0,sv:"1/4"},{n:"Sweet Potato",c:86,p:2,ca:20,f:0,fi:3,s:4,sv:"1/2 cup"},{n:"Yogurt",c:60,p:3,ca:7,f:2,fi:0,s:5,sv:"1/4 cup"},{n:"Cheerios",c:70,p:2,ca:14,f:1,fi:2,s:1,sv:"1/2 cup"},{n:"Apple Sauce",c:50,p:0,ca:14,f:0,fi:1,s:11,sv:"1/4 cup"},{n:"Egg",c:70,p:6,ca:0,f:5,fi:0,s:0,sv:"1 egg"},{n:"PB",c:95,p:4,ca:3,f:8,fi:1,s:2,sv:"1 tbsp"},{n:"Rice Cereal",c:60,p:1,ca:13,f:0,fi:0,s:1,sv:"1/4 cup"},{n:"Puffs",c:25,p:0,ca:5,f:0,fi:0,s:0,sv:"7 pcs"}];
-  const pick = (f) => { setFn(f.n); setCal(String(f.c)); setPro(String(f.p)); setCarb(String(f.ca)); setFat(String(f.f)); setFib(String(f.fi)); setSug(String(f.s)); setSs(f.sv); };
+  const [editingQuicks, setEditingQuicks] = useState(false);
+  const [newQuick, setNewQuick] = useState({n:"",c:"",p:"",ca:"",f:"",fi:"",s:"",sv:""});
+
+  const qf = data.settings?.foodQuickPicks || DEFAULT_QUICK_FOODS;
+  const saveQuicks = (updated) => updateData("settings", { ...(data.settings||{}), foodQuickPicks: updated });
+
+  const pick = (f) => { setFn(f.n); setCal(String(f.c||"")); setPro(String(f.p||"")); setCarb(String(f.ca||"")); setFat(String(f.f||"")); setFib(String(f.fi||"")); setSug(String(f.s||"")); setSs(f.sv||""); };
   const submit = () => { if (!fn) return; addLog({ type: "food", foodName: fn, servingSize: ss, calories: parseFloat(cal)||0, protein: parseFloat(pro)||0, carbs: parseFloat(carb)||0, fat: parseFloat(fat)||0, fiber: parseFloat(fib)||0, sugar: parseFloat(sug)||0, date: todayStr, time, reaction: rx }); const prefs = data.foodPreferences || { likes: [], dislikes: [] }; const k = fn.toLowerCase(); if (rx === "loved" && !prefs.likes.includes(k)) updateData("foodPreferences", { ...prefs, likes: [...prefs.likes, k], dislikes: prefs.dislikes.filter(d => d !== k) }); if (rx === "refused" && !prefs.dislikes.includes(k)) updateData("foodPreferences", { ...prefs, dislikes: [...prefs.dislikes, k], likes: prefs.likes.filter(l => l !== k) }); };
+  const addQuickPick = () => {
+    if (!newQuick.n.trim()) return;
+    saveQuicks([...qf, { ...newQuick, c: parseFloat(newQuick.c)||0, p: parseFloat(newQuick.p)||0, ca: parseFloat(newQuick.ca)||0, f: parseFloat(newQuick.f)||0, fi: parseFloat(newQuick.fi)||0, s: parseFloat(newQuick.s)||0 }]);
+    setNewQuick({n:"",c:"",p:"",ca:"",f:"",fi:"",s:"",sv:""});
+    showToast("✅ Quick pick added!");
+  };
+  const removeQuickPick = (idx) => saveQuicks(qf.filter((_, i) => i !== idx));
+  const resetQuicks = () => { saveQuicks(DEFAULT_QUICK_FOODS); showToast("Reset to defaults"); };
+
   const is = inputStyle(theme);
   return (
     <div>
       <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16, textAlign: "center" }}>🍎 Log Food</h2>
-      <SectionLabel theme={theme}>Quick Picks</SectionLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>{qf.map(f => (<button key={f.n} onClick={() => pick(f)} style={{ background: fn === f.n ? theme.accentSoft : theme.bg, border: `1px solid ${fn === f.n ? theme.accent : theme.border}`, borderRadius: 10, padding: "6px 12px", color: fn === f.n ? theme.accent : theme.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{f.n}</button>))}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <SectionLabel theme={theme}>Quick Picks</SectionLabel>
+        <button onClick={() => setEditingQuicks(e => !e)} style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 8, padding: "3px 10px", color: theme.textMuted, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+          {editingQuicks ? "Done" : "✏️ Edit"}
+        </button>
+      </div>
+      {editingQuicks ? (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, maxHeight: 200, overflowY: "auto" }}>
+            {qf.map((f, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: theme.bg, borderRadius: 10, padding: "8px 12px", border: `1px solid ${theme.border}` }}>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{f.n}</span>
+                <span style={{ fontSize: 11, color: theme.textMuted }}>{f.c||0} cal · {f.sv||""}</span>
+                <button onClick={() => removeQuickPick(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "#e57373", fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: theme.bg, borderRadius: 12, padding: 12, border: `1px solid ${theme.border}`, marginBottom: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 800, color: theme.textMuted, marginBottom: 8 }}>ADD NEW QUICK PICK</p>
+            <input placeholder="Name *" value={newQuick.n} onChange={e => setNewQuick(q => ({...q,n:e.target.value}))} style={{ ...is, marginBottom: 6 }} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 6 }}>
+              {[["c","Cal"],["p","Protein g"],["ca","Carbs g"],["f","Fat g"],["fi","Fiber g"],["s","Sugar g"]].map(([k,lbl]) => (
+                <input key={k} placeholder={lbl} type="number" value={newQuick[k]} onChange={e => setNewQuick(q => ({...q,[k]:e.target.value}))} style={is} />
+              ))}
+            </div>
+            <input placeholder="Serving size (e.g. 1 cup)" value={newQuick.sv} onChange={e => setNewQuick(q => ({...q,sv:e.target.value}))} style={{ ...is, marginBottom: 8 }} />
+            <button onClick={addQuickPick} disabled={!newQuick.n.trim()} style={{ width: "100%", padding: 10, borderRadius: 10, background: newQuick.n.trim() ? theme.accent : theme.border, color: "#fff", fontWeight: 700, border: "none", cursor: newQuick.n.trim() ? "pointer" : "default" }}>Add Quick Pick</button>
+          </div>
+          <button onClick={resetQuicks} style={{ width: "100%", padding: 8, borderRadius: 10, background: "none", border: `1px solid ${theme.border}`, color: theme.textMuted, fontSize: 12, cursor: "pointer" }}>Reset to defaults</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>{qf.map((f,i) => (<button key={i} onClick={() => pick(f)} style={{ background: fn === f.n ? theme.accentSoft : theme.bg, border: `1px solid ${fn === f.n ? theme.accent : theme.border}`, borderRadius: 10, padding: "6px 12px", color: fn === f.n ? theme.accent : theme.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{f.n}</button>))}</div>
+      )}
       <input placeholder="Food name" value={fn} onChange={e => setFn(e.target.value)} style={{ ...is, fontSize: 16, fontWeight: 700, marginBottom: 8 }} />
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}><input placeholder="Serving" value={ss} onChange={e => setSs(e.target.value)} style={{ ...is, flex: 1 }} /><input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...is, flex: 1 }} /></div>
       <SectionLabel theme={theme}>Nutrition (optional)</SectionLabel>
@@ -1182,14 +1242,97 @@ function TrendsPage({ data, theme }) {
 }
 
 function MilestonesPage({ data, updateData, theme, showToast }) {
-  const [cat, setCat] = useState("motor"); const ms = data.milestones || {};
-  const toggle = (c, i) => { const k = `${c}_${i}`; const u = { ...ms }; if (u[k]) delete u[k]; else u[k] = localDateStr(); updateData("milestones", u); if (!ms[k]) showToast("⭐ Milestone!"); };
-  const cc = Object.keys(ms).filter(k => k.startsWith(cat)).length, tc = MILESTONE_CATEGORIES[cat].items.length;
-  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16 }}>⭐ Milestones</h2>
-    <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 16, paddingBottom: 4 }}>{Object.entries(MILESTONE_CATEGORIES).map(([k, c]) => (<button key={k} className="tab-btn" onClick={() => setCat(k)} style={{ background: cat === k ? theme.accentSoft : theme.card, border: `1px solid ${cat === k ? theme.accent : theme.border}`, borderRadius: 14, padding: "8px 14px", color: cat === k ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 }}>{c.icon} {c.label}</button>))}</div>
-    <div style={{ background: theme.card, borderRadius: 16, padding: "12px 16px", border: `1px solid ${theme.border}`, marginBottom: 16 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700 }}>{MILESTONE_CATEGORIES[cat].label}</span><span style={{ fontSize: 13, fontWeight: 800, color: theme.accent }}>{cc}/{tc}</span></div><div style={{ height: 6, background: theme.bg, borderRadius: 6, overflow: "hidden" }}><div style={{ height: "100%", width: `${(cc/tc)*100}%`, background: theme.accent, borderRadius: 6, transition: "width 0.3s" }} /></div></div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{MILESTONE_CATEGORIES[cat].items.map(i => { const k = `${cat}_${i}`, done = ms[k]; return (<button key={i} className="card" onClick={() => toggle(cat, i)} style={{ background: done ? theme.accentSoft : theme.card, border: `1px solid ${done ? theme.accent : theme.border}`, borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", textAlign: "left" }}><div style={{ width: 28, height: 28, borderRadius: 8, border: `2px solid ${done ? theme.accent : theme.border}`, background: done ? theme.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#fff", fontWeight: 800, flexShrink: 0 }}>{done ? "✓" : ""}</div><div style={{ flex: 1 }}><span style={{ fontSize: 14, fontWeight: 700, color: done ? theme.accent : theme.text }}>{i}</span>{done && <span style={{ fontSize: 11, color: theme.textMuted, marginLeft: 8 }}>{done}</span>}</div></button>); })}</div>
-  </div>);
+  const [cat, setCat] = useState("motor");
+  const [editingKey, setEditingKey] = useState(null);
+  const [editDate, setEditDate] = useState("");
+  const ms = data.milestones || {};
+
+  const toggle = (c, i) => {
+    const k = `${c}_${i}`;
+    const u = { ...ms };
+    if (u[k]) { delete u[k]; }
+    else { u[k] = localDateStr(); showToast("⭐ Milestone!"); }
+    updateData("milestones", u);
+  };
+
+  const startEditDate = (k, currentDate, e) => {
+    e.stopPropagation();
+    setEditingKey(k);
+    setEditDate(currentDate || localDateStr());
+  };
+
+  const saveDate = (k) => {
+    const u = { ...ms };
+    u[k] = editDate;
+    updateData("milestones", u);
+    setEditingKey(null);
+    showToast("📅 Date updated!");
+  };
+
+  const cc = Object.keys(ms).filter(k => k.startsWith(cat)).length;
+  const tc = MILESTONE_CATEGORIES[cat].items.length;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16 }}>⭐ Milestones</h2>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 16, paddingBottom: 4 }}>
+        {Object.entries(MILESTONE_CATEGORIES).map(([k, c]) => (
+          <button key={k} className="tab-btn" onClick={() => setCat(k)}
+            style={{ background: cat === k ? theme.accentSoft : theme.card, border: `1px solid ${cat === k ? theme.accent : theme.border}`, borderRadius: 14, padding: "8px 14px", color: cat === k ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 }}>
+            {c.icon} {c.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ background: theme.card, borderRadius: 16, padding: "12px 16px", border: `1px solid ${theme.border}`, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{MILESTONE_CATEGORIES[cat].label}</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: theme.accent }}>{cc}/{tc}</span>
+        </div>
+        <div style={{ height: 6, background: theme.bg, borderRadius: 6, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${(cc/tc)*100}%`, background: theme.accent, borderRadius: 6, transition: "width 0.3s" }} />
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {MILESTONE_CATEGORIES[cat].items.map(item => {
+          const k = `${cat}_${item}`;
+          const done = ms[k];
+          const isEditing = editingKey === k;
+          return (
+            <div key={item} className="card"
+              style={{ background: done ? theme.accentSoft : theme.card, border: `1px solid ${done ? theme.accent : theme.border}`, borderRadius: 14, padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }} onClick={() => toggle(cat, item)}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, border: `2px solid ${done ? theme.accent : theme.border}`, background: done ? theme.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#fff", fontWeight: 800, flexShrink: 0, cursor: "pointer" }}>
+                  {done ? "✓" : ""}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: done ? theme.accent : theme.text }}>{item}</span>
+                  {done && !isEditing && (
+                    <span style={{ fontSize: 11, color: theme.textMuted, marginLeft: 8 }}>{done}</span>
+                  )}
+                </div>
+                {done && !isEditing && (
+                  <button onClick={e => startEditDate(k, done, e)}
+                    style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 8, padding: "3px 8px", color: theme.textMuted, fontSize: 11, cursor: "pointer" }}>
+                    📅
+                  </button>
+                )}
+              </div>
+              {isEditing && (
+                <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+                  <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                    style={{ ...inputStyle(theme), flex: 1 }} />
+                  <button onClick={() => saveDate(k)}
+                    style={{ padding: "8px 14px", borderRadius: 10, background: theme.accent, color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", fontSize: 13 }}>Save</button>
+                  <button onClick={() => setEditingKey(null)}
+                    style={{ padding: "8px 14px", borderRadius: 10, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Cancel</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function GrowthPage({ data, updateData, theme, showToast, navigateBack }) {
@@ -1329,31 +1472,66 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
       {notifPermission === "granted" && (
         <p style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 12 }}>✓ Notifications enabled</p>
       )}
+
+      {/* Toggle helper */}
       {[
         { key: "feedingEnabled", label: "Feeding Reminder", icon: "🍼", sub: "Remind me to feed baby" },
         { key: "medicineEnabled", label: "Medicine Check", icon: "💊", sub: "Hourly medicine reminder" },
+        { key: "napEnabled", label: "Nap Reminder", icon: "😴", sub: "Alert at custom nap times" },
       ].map(({ key, label, icon, sub }) => (
-        <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
-          <div><div style={{ fontSize: 14, fontWeight: 700 }}>{icon} {label}</div><div style={{ fontSize: 12, color: theme.textMuted }}>{sub}</div></div>
-          <button onClick={() => setReminders(r => ({ ...r, [key]: !r[key] }))}
-            style={{ width: 48, height: 28, borderRadius: 14, background: reminders[key] ? theme.accent : theme.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
-            <span style={{ position: "absolute", top: 3, left: reminders[key] ? 22 : 4, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
-          </button>
+        <div key={key}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 12, marginBottom: reminders[key] ? 0 : 12, borderBottom: reminders[key] ? "none" : `1px solid ${theme.border}` }}>
+            <div><div style={{ fontSize: 14, fontWeight: 700 }}>{icon} {label}</div><div style={{ fontSize: 12, color: theme.textMuted }}>{sub}</div></div>
+            <button onClick={() => setReminders(r => ({ ...r, [key]: !r[key] }))}
+              style={{ width: 48, height: 28, borderRadius: 14, background: reminders[key] ? theme.accent : theme.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+              <span style={{ position: "absolute", top: 3, left: reminders[key] ? 22 : 4, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
+            </button>
+          </div>
+
+          {/* Feeding interval sub-option */}
+          {key === "feedingEnabled" && reminders.feedingEnabled && (
+            <div style={{ paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
+              <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>REMIND EVERY</label>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {[[60,"1 hr"],[120,"2 hr"],[180,"3 hr"],[240,"4 hr"]].map(([mins, lbl]) => (
+                  <button key={mins} onClick={() => setReminders(r => ({ ...r, feedingMins: mins }))}
+                    style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: reminders.feedingMins === mins ? theme.accentSoft : theme.card, border: `1px solid ${reminders.feedingMins === mins ? theme.accent : theme.border}`, color: reminders.feedingMins === mins ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Nap times sub-option */}
+          {key === "napEnabled" && reminders.napEnabled && (
+            <div style={{ paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>NAP REMINDER TIMES</label>
+                <button
+                  onClick={() => setReminders(r => ({ ...r, napTimes: [...(r.napTimes||[]), "12:00"] }))}
+                  style={{ background: theme.accentSoft, border: `1px solid ${theme.accent}`, borderRadius: 8, padding: "3px 10px", color: theme.accent, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  + Add
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(reminders.napTimes || []).map((t, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="time" value={t}
+                      onChange={e => setReminders(r => { const times = [...(r.napTimes||[])]; times[i] = e.target.value; return { ...r, napTimes: times }; })}
+                      style={{ ...inputStyle(theme), flex: 1 }} />
+                    <button onClick={() => setReminders(r => ({ ...r, napTimes: (r.napTimes||[]).filter((_,j) => j !== i) }))}
+                      style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 8, padding: "8px 12px", color: "#e57373", fontWeight: 700, cursor: "pointer" }}>×</button>
+                  </div>
+                ))}
+                {(reminders.napTimes||[]).length === 0 && (
+                  <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center" }}>No nap times set. Tap "+ Add" to add one.</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ))}
-      {reminders.feedingEnabled && (
-        <div>
-          <label style={{ fontSize: 12, color: theme.textMuted, fontWeight: 700 }}>REMIND EVERY</label>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            {[[60,"1 hr"],[120,"2 hr"],[180,"3 hr"],[240,"4 hr"]].map(([mins, lbl]) => (
-              <button key={mins} onClick={() => setReminders(r => ({ ...r, feedingMins: mins }))}
-                style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: reminders.feedingMins === mins ? theme.accentSoft : theme.card, border: `1px solid ${reminders.feedingMins === mins ? theme.accent : theme.border}`, color: reminders.feedingMins === mins ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                {lbl}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Data</SectionLabel><div style={{ display: "flex", gap: 10 }}><button onClick={() => { const bl = new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const u = URL.createObjectURL(bl); const a = document.createElement("a"); a.href = u; a.download = `wieser-baby-${localDateStr()}.json`; a.click(); URL.revokeObjectURL(u); showToast("Downloaded!"); }} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>📦 Export</button><button onClick={() => { if (window.confirm("Clear ALL data?")) { updateData("logs",[]); updateData("milestones",{}); updateData("growthRecords",[]); updateData("familyUpdates",[]); updateData("pediatricianNotes",[]); updateData("foodPreferences",{likes:[],dislikes:[]}); showToast("Cleared"); } }} style={{ flex: 1, padding: 14, borderRadius: 14, background: "rgba(229,115,115,0.1)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🗑️ Clear</button></div></div>
     <div style={{ textAlign: "center", padding: 20, color: theme.textMuted }}><p style={{ fontFamily: "'Fredoka'", fontSize: 16 }}><span style={{ color: theme.accent }}>Wieser</span> Baby</p><p style={{ fontSize: 12, marginTop: 4 }}>v{APP_VERSION}</p></div>
