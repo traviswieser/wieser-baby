@@ -1536,6 +1536,172 @@ function CoPilotPage({ data, theme, updateData, showToast, todayStr }) {
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// AI PROVIDER SECTION — with step-by-step key setup guides
+// ═══════════════════════════════════════════════════════════════
+const AI_PROVIDER_GUIDES = {
+  groq: {
+    label: "Groq",
+    badge: "FREE",
+    badgeColor: "#22c55e",
+    icon: "⚡",
+    cost: "Completely free — no credit card needed",
+    description: "Fastest option. Powered by Llama 3.3. Free tier is very generous.",
+    steps: [
+      { text: "Go to the Groq console", url: "https://console.groq.com/keys", linkText: "console.groq.com/keys" },
+      { text: "Sign up or log in (free Google sign-in works)" },
+      { text: 'Click "Create API Key"' },
+      { text: 'Give it a name like "Wieser Baby"' },
+      { text: "Copy the key (starts with gsk_...) and paste it below" },
+    ],
+    note: "The free tier handles hundreds of digests per month.",
+  },
+  openai: {
+    label: "OpenAI",
+    badge: "PAID",
+    badgeColor: "#f59f00",
+    icon: "🤖",
+    cost: "~$0.01–0.05 per digest (very cheap)",
+    description: "Uses GPT-4o Mini. Slightly better writing quality than Groq.",
+    steps: [
+      { text: "Go to the OpenAI API platform", url: "https://platform.openai.com/api-keys", linkText: "platform.openai.com/api-keys" },
+      { text: "Sign up or log in to your OpenAI account" },
+      { text: "Add a payment method under Billing (even $5 lasts months)" },
+      { text: 'Click "+ Create new secret key"' },
+      { text: "Copy the key (starts with sk-...) and paste it below" },
+    ],
+    note: "Each digest costs roughly 1–5 cents. $5 credit = 100–500 digests.",
+  },
+  anthropic: {
+    label: "Claude (Anthropic)",
+    badge: "PAID",
+    badgeColor: "#f59f00",
+    icon: "✳️",
+    cost: "~$0.01–0.05 per digest",
+    description: "Uses Claude Sonnet. Best writing quality of the four options.",
+    steps: [
+      { text: "Go to the Anthropic Console", url: "https://console.anthropic.com/keys", linkText: "console.anthropic.com/keys" },
+      { text: "Sign up or log in" },
+      { text: "Add a payment method under Billing" },
+      { text: 'Click "Create Key"' },
+      { text: "Copy the key (starts with sk-ant-...) and paste it below" },
+    ],
+    note: "Claude writes the warmest, most natural-sounding digests.",
+  },
+  gemini: {
+    label: "Google Gemini",
+    badge: "FREE TIER",
+    badgeColor: "#3b82f6",
+    icon: "✨",
+    cost: "Free tier available — no card needed to start",
+    description: "Google's AI. Free tier covers typical usage easily.",
+    steps: [
+      { text: "Go to Google AI Studio", url: "https://aistudio.google.com/app/apikey", linkText: "aistudio.google.com/app/apikey" },
+      { text: "Sign in with your Google account" },
+      { text: 'Click "Create API key"' },
+      { text: 'Select "Create API key in new project" (or an existing project)' },
+      { text: "Copy the key and paste it below" },
+    ],
+    note: "Free tier includes 15 requests/minute — more than enough for daily digests.",
+  },
+};
+
+function AIProviderSection({ theme, s, us, inputStyle }) {
+  const [showGuide, setShowGuide] = useState(false);
+  const [keyVisible, setKeyVisible] = useState(false);
+  const guide = AI_PROVIDER_GUIDES[s.aiProvider || "groq"];
+  const providers = [
+    { id: "groq",      label: "⚡ Groq",    sub: "Free" },
+    { id: "openai",    label: "🤖 OpenAI",  sub: "Paid" },
+    { id: "anthropic", label: "✳️ Claude",  sub: "Paid" },
+    { id: "gemini",    label: "✨ Gemini",  sub: "Free tier" },
+  ];
+
+  return (
+    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+      <SectionLabel theme={theme}>Baby Co-Pilot — AI Provider</SectionLabel>
+
+      {/* Provider picker */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+        {providers.map(p => (
+          <button key={p.id} onClick={() => { us("aiProvider", p.id); setShowGuide(false); }}
+            style={{ background: s.aiProvider === p.id ? theme.accentSoft : theme.bg, border: `2px solid ${s.aiProvider === p.id ? theme.accent : theme.border}`, borderRadius: 14, padding: "12px 10px", cursor: "pointer", textAlign: "left" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: s.aiProvider === p.id ? theme.accent : theme.text }}>{p.label}</div>
+            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+              <span style={{ background: AI_PROVIDER_GUIDES[p.id].badgeColor + "22", color: AI_PROVIDER_GUIDES[p.id].badgeColor, borderRadius: 6, padding: "1px 6px", fontWeight: 700 }}>{AI_PROVIDER_GUIDES[p.id].badge}</span>
+              {" "}{AI_PROVIDER_GUIDES[p.id].cost.split("—")[0]}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* API Key input */}
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <input
+          type={keyVisible ? "text" : "password"}
+          placeholder={`Paste your ${guide.label} API key here`}
+          value={s.aiKey || ""}
+          onChange={e => us("aiKey", e.target.value)}
+          style={{ ...inputStyle(theme), paddingRight: 44, fontFamily: s.aiKey ? "monospace" : "'Nunito', sans-serif", fontSize: s.aiKey ? 13 : 14 }}
+        />
+        <button onClick={() => setKeyVisible(v => !v)}
+          style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16, color: theme.textMuted }}>
+          {keyVisible ? "🙈" : "👁️"}
+        </button>
+      </div>
+
+      {/* Status indicator */}
+      {s.aiKey
+        ? <p style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 12 }}>✓ API key saved</p>
+        : <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>No key set — tap "How to get a key" below</p>
+      }
+
+      {/* Expandable guide */}
+      <button onClick={() => setShowGuide(v => !v)}
+        style={{ width: "100%", padding: "11px 16px", borderRadius: 14, background: showGuide ? theme.accentSoft : theme.bg, border: `1px solid ${showGuide ? theme.accent : theme.border}`, color: showGuide ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>📋 How to get a {guide.label} key</span>
+        <span style={{ fontSize: 16, transition: "transform 0.2s", transform: showGuide ? "rotate(180deg)" : "none" }}>⌄</span>
+      </button>
+
+      {showGuide && (
+        <div style={{ marginTop: 10, background: theme.bg, borderRadius: 16, padding: 16, border: `1px solid ${theme.border}`, animation: "fadeIn 0.2s" }}>
+          {/* Description */}
+          <p style={{ fontSize: 13, color: theme.text, marginBottom: 12, lineHeight: 1.5 }}>
+            <span style={{ background: guide.badgeColor + "22", color: guide.badgeColor, borderRadius: 6, padding: "2px 8px", fontWeight: 700, fontSize: 11, marginRight: 8 }}>{guide.badge}</span>
+            {guide.description}
+          </p>
+
+          {/* Steps */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+            {guide.steps.map((step, i) => (
+              <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ width: 24, height: 24, borderRadius: "50%", background: theme.accentSoft, color: theme.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, flexShrink: 0 }}>{i + 1}</div>
+                <p style={{ fontSize: 13, color: theme.text, lineHeight: 1.5, margin: 0 }}>
+                  {step.text}
+                  {step.url && (
+                    <> — <a href={step.url} target="_blank" rel="noopener noreferrer"
+                      style={{ color: theme.accent, fontWeight: 700, textDecoration: "none" }}>
+                      {step.linkText} ↗
+                    </a></>
+                  )}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Note */}
+          {guide.note && (
+            <div style={{ background: theme.accentSoft, borderRadius: 10, padding: "10px 12px", borderLeft: `3px solid ${theme.accent}` }}>
+              <p style={{ fontSize: 12, color: theme.text, margin: 0, lineHeight: 1.5 }}>💡 {guide.note}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange }) {
   const s = data.settings || {}, b = activeBaby || data.baby || DEFAULT_BABY;
   const us = (k, v) => updateData("settings", { ...s, [k]: v });
@@ -1588,7 +1754,7 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
         ))}
       </div>
     </div>
-    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>AI Provider (BYOK)</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>{[{id:"groq",l:"Groq (Free)"},{id:"openai",l:"💲 OpenAI"},{id:"anthropic",l:"💲 Claude"},{id:"gemini",l:"💲 Gemini"}].map(p => (<button key={p.id} className="card" onClick={() => us("aiProvider", p.id)} style={{ background: s.aiProvider === p.id ? theme.accentSoft : theme.bg, border: `1px solid ${s.aiProvider === p.id ? theme.accent : theme.border}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", color: s.aiProvider === p.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>{p.l}</button>))}</div><input type="password" placeholder="API Key" value={s.aiKey || ""} onChange={e => us("aiKey", e.target.value)} style={inputStyle(theme)} /><p style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>{s.aiProvider === "groq" ? "Free at console.groq.com/keys" : "Paid API key required."}</p></div>
+    <AIProviderSection theme={theme} s={s} us={us} inputStyle={inputStyle} />
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{[{p:"growth",i:"📏",l:"Growth"},{p:"activities",i:"🎯",l:"Activities"},{p:"pooplog",i:"💩",l:"Poop Log"},{p:"family",i:"👨‍👩‍👦",l:"Family"}].map(x => (<button key={x.p} className="log-btn" onClick={() => navigate(x.p)} style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, cursor: "pointer", textAlign: "center" }}><span style={{ fontSize: 22 }}>{x.i}</span><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{x.l}</div></button>))}</div>
     {currentUser && !currentUser.isAnonymous && (
       <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
