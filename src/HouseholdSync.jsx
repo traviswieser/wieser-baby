@@ -58,7 +58,11 @@ export default function HouseholdSync({ currentUser, theme, showToast, onHouseho
       showToast("🔗 Joined household! Syncing data…");
       onHouseholdChange();
     } catch (err) {
-      setError(err.message);
+      if (err.message && err.message.toLowerCase().includes("permission")) {
+        setError("Permission error — your Firestore rules need updating. Ask Travis to deploy firestore.rules from the repo, or go to Firebase Console → Firestore → Rules and paste the rules from firestore.rules.");
+      } else {
+        setError(err.message);
+      }
     }
     setLoading(false);
   };

@@ -496,10 +496,25 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
 
   const handleSleepToggle = () => {
     if (data.sleepState) {
+      // Waking up — stop timer immediately
       const mins = Math.floor((now - new Date(data.sleepState.startTime)) / 60000);
       addLog({ type: "sleep", subtype: "woke_up", date: todayStr, time: localTimeStr(now), durationMins: mins });
       updateData("sleepState", null);
-    } else { updateData("sleepState", { startTime: now.toISOString() }); showToast("😴 Sleep timer started"); }
+    } else {
+      // Starting sleep — show "Start Now or Edit Start Time" prompt
+      setModal(
+        <SleepStartModal
+          theme={theme}
+          now={now}
+          onStart={(startTime) => {
+            updateData("sleepState", { startTime });
+            showToast("😴 Sleep timer started");
+            setModal(null);
+          }}
+          onClose={() => setModal(null)}
+        />
+      );
+    }
   };
   const sleepDur = data.sleepState ? (() => { const m = Math.floor((now - new Date(data.sleepState.startTime)) / 60000); return m >= 60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`; })() : null;
   const sleepPrediction = !data.sleepState ? predictNextSleep(data.logs || [], now) : null;
@@ -589,7 +604,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
                   {log.type === "bottle" ? `${log.amount} oz ${log.feedType || ""}` :
                    log.type === "poop" ? `${POOP_COLORS.find(c=>c.id===log.color)?.label||""} / ${POOP_CONSISTENCIES.find(c=>c.id===log.consistency)?.label||""}` :
                    log.type === "diaper" ? "Wet diaper" :
-                   log.type === "sleep" ? (log.subtype === "woke_up" ? `Slept ${log.durationMins||0}m` : "Fell asleep") :
+                   log.type === "sleep" ? (log.subtype === "woke_up" ? (log.durationMins >= 60 ? `Slept ${Math.floor((log.durationMins||0)/60)}h ${(log.durationMins||0)%60}m` : `Slept ${log.durationMins||0}m`) : "Fell asleep") :
                    log.type === "food" ? `${log.foodName||"Food"} ${log.calories?`(${log.calories}cal)`:""}` :
                    log.type === "medicine" ? log.name :
                    log.type === "teething" ? `Tooth - ${log.tooth||""}` :
@@ -995,13 +1010,97 @@ function BarcodeScanModal({ theme, addLog, data, updateData, todayStr, now, show
   );
 }
 
+// ─── SLEEP START MODAL ───────────────────────────────────────
+function SleepStartModal({ theme, now, onStart, onClose }) {
+  const [customTime, setCustomTime] = useState(localTimeStr(now));
+  const [mode, setMode] = useState("choose"); // "choose" | "edit"
+
+  if (mode === "choose") {
+    return (
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>😴</div>
+        <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 8 }}>Starting Sleep</h2>
+        <p style={{ fontSize: 14, color: theme.textMuted, marginBottom: 24, lineHeight: 1.5 }}>When did baby fall asleep?</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <button onClick={() => onStart(now.toISOString())}
+            style={{ padding: "18px 16px", borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 17, border: "none", cursor: "pointer" }}>
+            😴 Start Now ({localTimeStr(now)})
+          </button>
+          <button onClick={() => setMode("edit")}
+            style={{ padding: "18px 16px", borderRadius: 16, background: theme.card, color: theme.text, fontWeight: 700, fontSize: 16, border: `1px solid ${theme.border}`, cursor: "pointer" }}>
+            ✏️ Edit Start Time
+          </button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: theme.textMuted, fontSize: 14, cursor: "pointer", padding: 8 }}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Edit start time mode
+  const handleCustomStart = () => {
+    const [h, m] = customTime.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    // If the chosen time is in the future, assume it was yesterday
+    if (d > new Date()) d.setDate(d.getDate() - 1);
+    onStart(d.toISOString());
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 8, textAlign: "center" }}>✏️ Edit Start Time</h2>
+      <p style={{ fontSize: 13, color: theme.textMuted, textAlign: "center", marginBottom: 20 }}>When did baby actually fall asleep?</p>
+      <input type="time" value={customTime} onChange={e => setCustomTime(e.target.value)}
+        style={{ ...inputStyle(theme), fontSize: 24, textAlign: "center", marginBottom: 20 }} />
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={() => setMode("choose")} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, cursor: "pointer" }}>← Back</button>
+        <button onClick={handleCustomStart} style={{ flex: 2, padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
+          Start Sleep at {customTime}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BottleModal({ theme, addLog, todayStr, now }) {
-  const [amt, setAmt] = useState(""); const [ft, setFt] = useState("formula"); const [time, setTime] = useState(localTimeStr(now));
-  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🍼 Log Bottle</h2><div style={{ display: "flex", gap: 8, marginBottom: 16, justifyContent: "center", flexWrap: "wrap" }}>{["formula","breast","milk","water","juice"].map(t => (<button key={t} onClick={() => setFt(t)} style={{ background: ft === t ? theme.accentSoft : theme.bg, border: `1px solid ${ft === t ? theme.accent : theme.border}`, borderRadius: 12, padding: "8px 14px", color: ft === t ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>))}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>{[2,3,4,5,6,7,8].map(a => (<button key={a} onClick={() => setAmt(String(a))} style={{ width: 56, height: 56, borderRadius: 16, fontSize: 18, fontWeight: 800, background: amt === String(a) ? theme.accent : theme.bg, color: amt === String(a) ? "#fff" : theme.text, border: `2px solid ${amt === String(a) ? theme.accent : theme.border}`, cursor: "pointer" }}>{a}</button>))}</div><div style={{ display: "flex", gap: 8, marginBottom: 16 }}><input type="number" step="0.5" placeholder="Custom oz" value={amt} onChange={e => setAmt(e.target.value)} style={{ flex: 1, ...inputStyle(theme), fontSize: 18, fontWeight: 700, textAlign: "center" }} /><input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle(theme)} /></div><button onClick={() => amt && addLog({ type: "bottle", amount: parseFloat(amt), feedType: ft, date: todayStr, time })} disabled={!amt} style={{ width: "100%", padding: 16, borderRadius: 16, background: amt ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: amt ? "pointer" : "default" }}>Log {amt||0} oz {ft}</button></div>);
+  const [amt, setAmt] = useState(4); const [ft, setFt] = useState("formula"); const [time, setTime] = useState(localTimeStr(now));
+  const step = 0.5;
+  const dec = () => setAmt(a => Math.max(0.5, Math.round((a - step) * 10) / 10));
+  const inc = () => setAmt(a => Math.round((a + step) * 10) / 10);
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🍼 Log Bottle</h2>
+      {/* Feed type */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, justifyContent: "center", flexWrap: "wrap" }}>
+        {["formula","breast","milk","water","juice"].map(t => (
+          <button key={t} onClick={() => setFt(t)} style={{ background: ft === t ? theme.accentSoft : theme.bg, border: `1px solid ${ft === t ? theme.accent : theme.border}`, borderRadius: 12, padding: "8px 14px", color: ft === t ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>
+        ))}
+      </div>
+      {/* Quick-pick amounts */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 20 }}>
+        {[2,3,4,5,6,7,8].map(a => (
+          <button key={a} onClick={() => setAmt(a)} style={{ width: 56, height: 56, borderRadius: 16, fontSize: 18, fontWeight: 800, background: amt === a ? theme.accent : theme.bg, color: amt === a ? "#fff" : theme.text, border: `2px solid ${amt === a ? theme.accent : theme.border}`, cursor: "pointer" }}>{a}</button>
+        ))}
+      </div>
+      {/* Fine-tune stepper */}
+      <div style={{ display: "flex", alignItems: "center", gap: 0, background: theme.bg, borderRadius: 18, border: `1px solid ${theme.border}`, overflow: "hidden", marginBottom: 16 }}>
+        <button onClick={dec} style={{ width: 60, height: 60, fontSize: 28, fontWeight: 300, background: "none", border: "none", color: theme.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>−</button>
+        <div style={{ flex: 1, textAlign: "center", fontSize: 32, fontWeight: 900, color: theme.text, fontFamily: "'Fredoka', sans-serif" }}>
+          {amt} <span style={{ fontSize: 16, fontWeight: 600, color: theme.textMuted }}>oz</span>
+        </div>
+        <button onClick={inc} style={{ width: 60, height: 60, fontSize: 28, fontWeight: 300, background: "none", border: "none", color: theme.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+</button>
+      </div>
+      {/* Time */}
+      <input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 16 }} />
+      <button onClick={() => addLog({ type: "bottle", amount: amt, feedType: ft, date: todayStr, time })} style={{ width: "100%", padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
+        Log {amt} oz {ft}
+      </button>
+    </div>
+  );
 }
 function MedicineModal({ theme, addLog, todayStr, now }) {
   const [n, setN] = useState(""); const [d, setD] = useState(""); const [t, setT] = useState(localTimeStr(now));
-  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>💊 Medicine</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>{["Tylenol","Ibuprofen","Vitamin D","Gripe Water","Gas Drops","Probiotics"].map(m => (<button key={m} onClick={() => setN(m)} style={{ background: n === m ? theme.accentSoft : theme.bg, border: `1px solid ${n === m ? theme.accent : theme.border}`, borderRadius: 12, padding: "8px 14px", color: n === m ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{m}</button>))}</div><input placeholder="Medicine name" value={n} onChange={e => setN(e.target.value)} style={{ ...inputStyle(theme), fontSize: 16, marginBottom: 10 }} /><div style={{ display: "flex", gap: 8, marginBottom: 16 }}><input placeholder="Dose" value={d} onChange={e => setD(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /><input type="time" value={t} onChange={e => setT(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /></div><button onClick={() => n && addLog({ type: "medicine", name: n, dose: d, date: todayStr, time: t })} disabled={!n} style={{ width: "100%", padding: 16, borderRadius: 16, background: n ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: n ? "pointer" : "default" }}>Log</button></div>);
+  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>💊 Medicine</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>{["Tylenol","Ibuprofen","Vitamin D","Multivitamin","Gripe Water","Gas Drops","Probiotics","Melatonin"].map(m => (<button key={m} onClick={() => setN(m)} style={{ background: n === m ? theme.accentSoft : theme.bg, border: `1px solid ${n === m ? theme.accent : theme.border}`, borderRadius: 12, padding: "8px 14px", color: n === m ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{m}</button>))}</div><input placeholder="Medicine name" value={n} onChange={e => setN(e.target.value)} style={{ ...inputStyle(theme), fontSize: 16, marginBottom: 10 }} /><div style={{ display: "flex", gap: 8, marginBottom: 16 }}><input placeholder="Dose" value={d} onChange={e => setD(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /><input type="time" value={t} onChange={e => setT(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /></div><button onClick={() => n && addLog({ type: "medicine", name: n, dose: d, date: todayStr, time: t })} disabled={!n} style={{ width: "100%", padding: 16, borderRadius: 16, background: n ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: n ? "pointer" : "default" }}>Log</button></div>);
 }
 function NoteModal({ theme, addLog, todayStr, now }) {
   const [n, setN] = useState(""); const [t, setT] = useState(localTimeStr(now));
@@ -1271,7 +1370,7 @@ function HistoryPage({ data, theme, updateData, navigateBack, showToast }) {
     {logs.length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: 30 }}>No logs.</p> : logs.map(l => (
       <div key={l.id} style={{ background: theme.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${theme.border}`, display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
         <span style={{ fontSize: 18 }}>{logIcon(l.type)}</span>
-        <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{l.type === "bottle" ? `${l.amount} oz ${l.feedType||""}` : l.type === "poop" ? `${POOP_COLORS.find(c=>c.id===l.color)?.label||""} / ${POOP_CONSISTENCIES.find(c=>c.id===l.consistency)?.label||""}` : l.type === "diaper" ? "Wet" : l.type === "sleep" ? (l.subtype === "woke_up" ? `Slept ${l.durationMins}m` : "Asleep") : l.type === "food" ? `${l.foodName||""} (${l.calories||0}cal)` : l.type === "medicine" ? `${l.name} ${l.dose||""}` : l.note?.slice(0,40)||"Note"}</div><div style={{ fontSize: 11, color: theme.textMuted }}>{formatTime12(l.time)}</div></div>
+        <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{l.type === "bottle" ? `${l.amount} oz ${l.feedType||""}` : l.type === "poop" ? `${POOP_COLORS.find(c=>c.id===l.color)?.label||""} / ${POOP_CONSISTENCIES.find(c=>c.id===l.consistency)?.label||""}` : l.type === "diaper" ? "Wet" : l.type === "sleep" ? (l.subtype === "woke_up" ? (l.durationMins >= 60 ? `Slept ${Math.floor((l.durationMins||0)/60)}h ${(l.durationMins||0)%60}m` : `Slept ${l.durationMins||0}m`) : "Asleep") : l.type === "food" ? `${l.foodName||""} (${l.calories||0}cal)` : l.type === "medicine" ? `${l.name} ${l.dose||""}` : l.note?.slice(0,40)||"Note"}</div><div style={{ fontSize: 11, color: theme.textMuted }}>{formatTime12(l.time)}</div></div>
         <button onClick={() => { if (window.confirm("Delete?")) { updateData("logs", data.logs.filter(x => x.id !== l.id)); showToast("Deleted"); } }} style={{ background: "none", border: "none", fontSize: 14, cursor: "pointer", color: theme.textMuted }}>✕</button>
       </div>
     ))}
