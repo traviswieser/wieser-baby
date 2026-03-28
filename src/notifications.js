@@ -24,7 +24,8 @@ export function getNotificationPermission() {
 }
 
 // ─── Send a notification ──────────────────────────────────────
-export function sendNotification(title, body, icon = "/icon-192.png") {
+export function sendNotification(title, body, icon) {
+  if (!icon) icon = (window.__wbBase || "/") + "icon-192.png";
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   try {
     new Notification(title, { body, icon, badge: icon, vibrate: [200, 100, 200] });
