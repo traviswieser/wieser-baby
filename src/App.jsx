@@ -4,7 +4,7 @@ import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut
 import AuthScreen from "./AuthScreen.jsx";
 import HouseholdSync from "./HouseholdSync.jsx";
 import BarcodeScanner from "./BarcodeScanner.jsx";
-import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders, scheduleNapReminders, cancelNapReminders } from "./notifications.js";
+import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders, cancelNapReminders, cancelMedicineReminders, setRemindersRef } from "./notifications.js";
 import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
 
 // ─── Constants & Config ───────────────────────────────────────
@@ -252,10 +252,14 @@ const filterForBaby = (d, babyId) => ({
 
 const DEFAULT_REMINDERS = {
   feedingEnabled: false,
-  feedingMins: 180,     // 3 hours
+  feedingMins: 180,
   medicineEnabled: false,
+  medicineTimes: ["08:00", "12:00", "18:00"],
   napEnabled: false,
-  napTimes: ["09:00", "13:00"],   // default 2 nap times
+  napTimes: ["09:00", "13:00"],
+  dndEnabled: false,
+  dndStart: "21:00",
+  dndEnd: "07:00",
 };
 
 
@@ -384,17 +388,13 @@ export default function WieserBabyApp() {
   useEffect(() => {
     localStorage.setItem("wieser-baby-reminders", JSON.stringify(reminders));
     if (data) {
-      syncReminders(data, reminders);
-      if (reminders.napEnabled && (reminders.napTimes || []).length > 0) {
-        scheduleNapReminders(reminders.napTimes, activeBaby?.name || "baby");
-      } else {
-        cancelNapReminders();
-      }
+      setRemindersRef(reminders); // keep DND ref fresh
+      syncReminders(data, reminders); // handles feeding + nap + medicine
     }
   }, [reminders, data]);
 
   // Cleanup all reminders on unmount
-  useEffect(() => () => { cancelAllReminders(); cancelNapReminders(); }, []);
+  useEffect(() => () => { cancelAllReminders(); cancelNapReminders(); cancelMedicineReminders(); }, []);
 
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
 
@@ -1981,6 +1981,48 @@ function AIProviderSection({ theme, s, us, inputStyle }) {
   );
 }
 
+// ─── Notification UI helpers ──────────────────────────────────
+function NotifToggleRow({ label, icon, sub, enabled, onToggle, theme, last }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 12, marginBottom: enabled || last ? 0 : 12, borderBottom: (enabled || last) ? "none" : `1px solid ${theme.border}` }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>{icon} {label}</div>
+        <div style={{ fontSize: 12, color: theme.textMuted }}>{sub}</div>
+      </div>
+      <button onClick={onToggle}
+        style={{ width: 48, height: 28, borderRadius: 14, background: enabled ? theme.accent : theme.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+        <span style={{ position: "absolute", top: 3, left: enabled ? 22 : 4, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
+      </button>
+    </div>
+  );
+}
+
+function NotifTimesList({ label, times, defaultTime, onChange, theme, inputStyle }) {
+  return (
+    <div style={{ paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>{label}</label>
+        <button onClick={() => onChange([...times, defaultTime])}
+          style={{ background: theme.accentSoft, border: `1px solid ${theme.accent}`, borderRadius: 8, padding: "3px 10px", color: theme.accent, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+          + Add
+        </button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {times.map((t, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="time" value={t}
+              onChange={e => { const next = [...times]; next[i] = e.target.value; onChange(next); }}
+              style={{ ...inputStyle(theme), flex: 1 }} />
+            <button onClick={() => onChange(times.filter((_, j) => j !== i))}
+              style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 8, padding: "8px 12px", color: "#e57373", fontWeight: 700, cursor: "pointer" }}>×</button>
+          </div>
+        ))}
+        {times.length === 0 && <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center" }}>No times set — tap "+ Add".</p>}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange, userThemeKey, setThemePref }) {
   const s = data.settings || {}, b = activeBaby || data.baby || DEFAULT_BABY;
   const us = (k, v) => updateData("settings", { ...s, [k]: v });
@@ -2060,75 +2102,88 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
 
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
       <SectionLabel theme={theme}>Notifications</SectionLabel>
-      {notifPermission === "unsupported" && <p style={{ fontSize: 13, color: theme.textMuted }}>Notifications aren't supported in this browser.</p>}
+      {notifPermission === "unsupported" && <p style={{ fontSize: 13, color: theme.textMuted }}>Notifications are not supported in this browser.</p>}
       {notifPermission !== "unsupported" && notifPermission !== "granted" && (
-        <button onClick={async () => { const r = await requestNotificationPermission(); setNotifPermission(r); }} style={{ width: "100%", padding: 12, borderRadius: 12, background: theme.accentSoft, border: `1px solid ${theme.accent}`, color: theme.accent, fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 12 }}>
+        <button onClick={async () => { const r = await requestNotificationPermission(); setNotifPermission(r); }}
+          style={{ width: "100%", padding: 12, borderRadius: 12, background: theme.accentSoft, border: `1px solid ${theme.accent}`, color: theme.accent, fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 12 }}>
           🔔 Enable Notifications
         </button>
       )}
-      {notifPermission === "granted" && (
-        <p style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 12 }}>✓ Notifications enabled</p>
+      {notifPermission === "granted" && <p style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 12 }}>✓ Notifications enabled</p>}
+
+      {/* ── Feeding ── */}
+      <NotifToggleRow label="Feeding Reminder" icon="🍼" sub="Remind me to feed baby"
+        enabled={reminders.feedingEnabled} onToggle={() => setReminders(r => ({ ...r, feedingEnabled: !r.feedingEnabled }))} theme={theme} />
+      {reminders.feedingEnabled && (
+        <div style={{ paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
+          <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>REMIND EVERY</label>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            {[[60,"1 hr"],[120,"2 hr"],[180,"3 hr"],[240,"4 hr"]].map(([mins, lbl]) => (
+              <button key={mins} onClick={() => setReminders(r => ({ ...r, feedingMins: mins }))}
+                style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: reminders.feedingMins === mins ? theme.accentSoft : theme.bg, border: `1px solid ${reminders.feedingMins === mins ? theme.accent : theme.border}`, color: reminders.feedingMins === mins ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* Toggle helper */}
-      {[
-        { key: "feedingEnabled", label: "Feeding Reminder", icon: "🍼", sub: "Remind me to feed baby" },
-        { key: "medicineEnabled", label: "Medicine Check", icon: "💊", sub: "Hourly medicine reminder" },
-        { key: "napEnabled", label: "Nap Reminder", icon: "😴", sub: "Alert at custom nap times" },
-      ].map(({ key, label, icon, sub }) => (
-        <div key={key}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 12, marginBottom: reminders[key] ? 0 : 12, borderBottom: reminders[key] ? "none" : `1px solid ${theme.border}` }}>
-            <div><div style={{ fontSize: 14, fontWeight: 700 }}>{icon} {label}</div><div style={{ fontSize: 12, color: theme.textMuted }}>{sub}</div></div>
-            <button onClick={() => setReminders(r => ({ ...r, [key]: !r[key] }))}
-              style={{ width: 48, height: 28, borderRadius: 14, background: reminders[key] ? theme.accent : theme.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
-              <span style={{ position: "absolute", top: 3, left: reminders[key] ? 22 : 4, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
-            </button>
+      {/* ── Medicine ── */}
+      <NotifToggleRow label="Medicine Reminder" icon="💊" sub="Alert at custom medicine times"
+        enabled={reminders.medicineEnabled} onToggle={() => setReminders(r => ({ ...r, medicineEnabled: !r.medicineEnabled }))} theme={theme} />
+      {reminders.medicineEnabled && (
+        <NotifTimesList
+          label="MEDICINE TIMES"
+          times={reminders.medicineTimes || []}
+          defaultTime="08:00"
+          onChange={times => setReminders(r => ({ ...r, medicineTimes: times }))}
+          theme={theme}
+          inputStyle={inputStyle}
+        />
+      )}
+
+      {/* ── Nap ── */}
+      <NotifToggleRow label="Nap Reminder" icon="😴" sub="Alert at custom nap times"
+        enabled={reminders.napEnabled} onToggle={() => setReminders(r => ({ ...r, napEnabled: !r.napEnabled }))} theme={theme} />
+      {reminders.napEnabled && (
+        <NotifTimesList
+          label="NAP TIMES"
+          times={reminders.napTimes || []}
+          defaultTime="12:00"
+          onChange={times => setReminders(r => ({ ...r, napTimes: times }))}
+          theme={theme}
+          inputStyle={inputStyle}
+        />
+      )}
+
+      {/* ── Do Not Disturb ── */}
+      <NotifToggleRow label="Do Not Disturb" icon="🌙" sub="Silence all notifications during set hours"
+        enabled={reminders.dndEnabled} onToggle={() => setReminders(r => ({ ...r, dndEnabled: !r.dndEnabled }))} theme={theme} last />
+      {reminders.dndEnabled && (
+        <div style={{ background: theme.bg, borderRadius: 14, padding: 14, border: `1px solid ${theme.border}`, marginBottom: 12 }}>
+          <p style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, marginBottom: 10 }}>
+            QUIET HOURS — no notifications will fire between these times
+          </p>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 10, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>FROM</label>
+              <input type="time" value={reminders.dndStart || "21:00"}
+                onChange={e => setReminders(r => ({ ...r, dndStart: e.target.value }))}
+                style={inputStyle(theme)} />
+            </div>
+            <span style={{ color: theme.textMuted, fontSize: 18, marginTop: 14 }}>→</span>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 10, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>TO</label>
+              <input type="time" value={reminders.dndEnd || "07:00"}
+                onChange={e => setReminders(r => ({ ...r, dndEnd: e.target.value }))}
+                style={inputStyle(theme)} />
+            </div>
           </div>
-
-          {/* Feeding interval sub-option */}
-          {key === "feedingEnabled" && reminders.feedingEnabled && (
-            <div style={{ paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
-              <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>REMIND EVERY</label>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                {[[60,"1 hr"],[120,"2 hr"],[180,"3 hr"],[240,"4 hr"]].map(([mins, lbl]) => (
-                  <button key={mins} onClick={() => setReminders(r => ({ ...r, feedingMins: mins }))}
-                    style={{ flex: 1, padding: "8px 4px", borderRadius: 10, background: reminders.feedingMins === mins ? theme.accentSoft : theme.card, border: `1px solid ${reminders.feedingMins === mins ? theme.accent : theme.border}`, color: reminders.feedingMins === mins ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                    {lbl}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Nap times sub-option */}
-          {key === "napEnabled" && reminders.napEnabled && (
-            <div style={{ paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${theme.border}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>NAP REMINDER TIMES</label>
-                <button
-                  onClick={() => setReminders(r => ({ ...r, napTimes: [...(r.napTimes||[]), "12:00"] }))}
-                  style={{ background: theme.accentSoft, border: `1px solid ${theme.accent}`, borderRadius: 8, padding: "3px 10px", color: theme.accent, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                  + Add
-                </button>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {(reminders.napTimes || []).map((t, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <input type="time" value={t}
-                      onChange={e => setReminders(r => { const times = [...(r.napTimes||[])]; times[i] = e.target.value; return { ...r, napTimes: times }; })}
-                      style={{ ...inputStyle(theme), flex: 1 }} />
-                    <button onClick={() => setReminders(r => ({ ...r, napTimes: (r.napTimes||[]).filter((_,j) => j !== i) }))}
-                      style={{ background: "none", border: `1px solid ${theme.border}`, borderRadius: 8, padding: "8px 12px", color: "#e57373", fontWeight: 700, cursor: "pointer" }}>×</button>
-                  </div>
-                ))}
-                {(reminders.napTimes||[]).length === 0 && (
-                  <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center" }}>No nap times set. Tap "+ Add" to add one.</p>
-                )}
-              </div>
-            </div>
-          )}
+          <p style={{ fontSize: 11, color: theme.textMuted, marginTop: 8, lineHeight: 1.4 }}>
+            💡 Times wrap overnight — e.g. 21:00 → 07:00 silences from 9 PM to 7 AM.
+          </p>
         </div>
-      ))}
+      )}
     </div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Data</SectionLabel><div style={{ display: "flex", gap: 10 }}><button onClick={() => { const bl = new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const u = URL.createObjectURL(bl); const a = document.createElement("a"); a.href = u; a.download = `wieser-baby-${localDateStr()}.json`; a.click(); URL.revokeObjectURL(u); showToast("Downloaded!"); }} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>📦 Export</button><button onClick={() => { if (window.confirm("Clear ALL data?")) { updateData("logs",[]); updateData("milestones",{}); updateData("growthRecords",[]); updateData("familyUpdates",[]); updateData("pediatricianNotes",[]); updateData("foodPreferences",{likes:[],dislikes:[]}); showToast("Cleared"); } }} style={{ flex: 1, padding: 14, borderRadius: 14, background: "rgba(229,115,115,0.1)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🗑️ Clear</button></div></div>
     <div style={{ textAlign: "center", padding: 20, color: theme.textMuted }}><p style={{ fontFamily: "'Fredoka'", fontSize: 16 }}><span style={{ color: theme.accent }}>Wieser</span> Baby</p><p style={{ fontSize: 12, marginTop: 4 }}>v{APP_VERSION}</p></div>
