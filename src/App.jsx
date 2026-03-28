@@ -404,7 +404,7 @@ export default function WieserBabyApp() {
   if (currentUser === undefined) {
     const st = getSplashTheme();
     return (
-      <div style={{ background: st.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
+      <div style={{ background: st.bg, minHeight: "100vh", width: "100vw", position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
         <img src={`${import.meta.env.BASE_URL}icon-1024.png`} alt="" style={{ width: 120, height: 120, borderRadius: 28, animation: "pulse 1.5s ease-in-out infinite" }} />
         <div style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 26, fontWeight: 700 }}>
           <span style={{ color: st.accent }}>Wieser</span>
@@ -439,7 +439,7 @@ export default function WieserBabyApp() {
   if (loading || !data) {
     const st = getSplashTheme();
     return (
-      <div style={{ background: st.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
+      <div style={{ background: st.bg, minHeight: "100vh", width: "100vw", position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
         <img src={`${import.meta.env.BASE_URL}icon-1024.png`} alt="" style={{ width: 120, height: 120, borderRadius: 28, animation: "pulse 1.5s ease-in-out infinite" }} />
         <div style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 26, fontWeight: 700 }}>
           <span style={{ color: st.accent }}>Wieser</span>
@@ -914,12 +914,30 @@ function FoodPage({ data, theme, updateData, addLog, setModal, showToast, todayS
         </div>
         <SectionLabel theme={theme}>Today's Food</SectionLabel>
         {todayFoods.length === 0 ? <p style={{ color: theme.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No food logged today.</p> : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{[...todayFoods].reverse().map(f => (
-            <div key={f.id} className="card" style={{ background: theme.card, borderRadius: 14, padding: "12px 14px", border: `1px solid ${f.source === "bottle" ? theme.info + "60" : theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div><div style={{ fontSize: 14, fontWeight: 700 }}>{f.source === "bottle" ? "🍼 " : ""}{f.foodName}{f.reaction === "loved" ? " 😍" : f.reaction === "refused" ? " 🙅" : ""}</div><div style={{ fontSize: 11, color: theme.textMuted }}>{f.servingSize || ""} {f.time ? `\u00B7 ${formatTime12(f.time)}` : ""}</div></div>
-              <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 800, color: theme.accent }}>{f.calories||0} cal</div><div style={{ fontSize: 10, color: theme.textMuted }}>P:{f.protein||0} C:{f.carbs||0} F:{f.fat||0}</div></div>
-            </div>
-          ))}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[...todayFoods].reverse().map(f => (
+              <div key={f.id} style={{ background: theme.card, borderRadius: 14, padding: "12px 14px", border: `1px solid ${f.source === "bottle" ? theme.info + "60" : theme.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.source === "bottle" ? "🍼 " : ""}{f.foodName}{f.reaction === "loved" ? " 😍" : f.reaction === "refused" ? " 🙅" : ""}</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted }}>{f.servingSize || ""}{f.time ? ` · ${formatTime12(f.time)}` : ""}</div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: theme.accent }}>{f.calories||0} cal</div>
+                  <div style={{ fontSize: 10, color: theme.textMuted }}>P:{f.protein||0} C:{f.carbs||0} F:{f.fat||0}</div>
+                </div>
+                <button
+                  onClick={() => setModal(<EditLogModal theme={theme} log={f} onSave={(updated) => { updateData("logs", data.logs.map(x => x.id === f.id ? { ...x, ...updated } : x)); showToast("✏️ Updated!"); setModal(null); }} onClose={() => setModal(null)} now={now} />)}
+                  style={{ background: theme.accentSoft, border: `1px solid ${theme.accent}40`, borderRadius: 8, padding: "5px 10px", color: theme.accent, fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+                  ✏️
+                </button>
+                <button
+                  onClick={() => { if (window.confirm("Delete this food log?")) { updateData("logs", data.logs.filter(x => x.id !== f.id)); showToast("Deleted"); } }}
+                  style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: theme.textMuted, flexShrink: 0, lineHeight: 1 }}>
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </>)}
 
