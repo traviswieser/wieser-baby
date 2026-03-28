@@ -78,6 +78,29 @@ const POOP_AMOUNTS = [
   { id: "blowout", label: "Blowout!", emoji: "💥" },
 ];
 
+
+// ─── Bottle nutrition per oz by feed type ────────────────────────────────────
+const BOTTLE_NUTRITION_PER_OZ = {
+  formula:     { calories: 20, protein: 0.5, carbs: 2.1, fat: 1.1, fiber: 0, sugar: 2.1 },
+  breast:      { calories: 20, protein: 0.3, carbs: 2.1, fat: 1.2, fiber: 0, sugar: 2.1 },
+  milk:        { calories: 18, protein: 1.0, carbs: 1.4, fat: 1.0, fiber: 0, sugar: 1.4 }, // whole milk
+  water:       { calories: 0,  protein: 0,   carbs: 0,   fat: 0,   fiber: 0, sugar: 0   },
+  juice:       { calories: 14, protein: 0,   carbs: 3.5, fat: 0,   fiber: 0, sugar: 3.2 },
+};
+
+function bottleNutrition(feedType, oz) {
+  const base = BOTTLE_NUTRITION_PER_OZ[feedType] || BOTTLE_NUTRITION_PER_OZ.milk;
+  const round1 = (n) => Math.round(n * oz * 10) / 10;
+  return {
+    calories: Math.round(base.calories * oz),
+    protein:  round1(base.protein),
+    carbs:    round1(base.carbs),
+    fat:      round1(base.fat),
+    fiber:    0,
+    sugar:    round1(base.sugar),
+  };
+}
+
 const DEFAULT_BABY = { name: "Baby", birthDate: "", photo: "" };
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -892,8 +915,8 @@ function FoodPage({ data, theme, updateData, addLog, setModal, showToast, todayS
         <SectionLabel theme={theme}>Today's Food</SectionLabel>
         {todayFoods.length === 0 ? <p style={{ color: theme.textMuted, fontSize: 13, textAlign: "center", padding: 20 }}>No food logged today.</p> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{[...todayFoods].reverse().map(f => (
-            <div key={f.id} className="card" style={{ background: theme.card, borderRadius: 14, padding: "12px 14px", border: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div><div style={{ fontSize: 14, fontWeight: 700 }}>{f.foodName}{f.reaction === "loved" ? " 😍" : f.reaction === "refused" ? " 🙅" : ""}</div><div style={{ fontSize: 11, color: theme.textMuted }}>{f.servingSize || ""} {f.time ? `\u00B7 ${formatTime12(f.time)}` : ""}</div></div>
+            <div key={f.id} className="card" style={{ background: theme.card, borderRadius: 14, padding: "12px 14px", border: `1px solid ${f.source === "bottle" ? theme.info + "60" : theme.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div><div style={{ fontSize: 14, fontWeight: 700 }}>{f.source === "bottle" ? "🍼 " : ""}{f.foodName}{f.reaction === "loved" ? " 😍" : f.reaction === "refused" ? " 🙅" : ""}</div><div style={{ fontSize: 11, color: theme.textMuted }}>{f.servingSize || ""} {f.time ? `\u00B7 ${formatTime12(f.time)}` : ""}</div></div>
               <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 800, color: theme.accent }}>{f.calories||0} cal</div><div style={{ fontSize: 10, color: theme.textMuted }}>P:{f.protein||0} C:{f.carbs||0} F:{f.fat||0}</div></div>
             </div>
           ))}</div>
@@ -956,11 +979,8 @@ const DEFAULT_QUICK_FOODS = [
   {n:"PB",c:95,p:4,ca:3,f:8,fi:1,s:2,sv:"1 tbsp"},
   {n:"Rice Cereal",c:60,p:1,ca:13,f:0,fi:0,s:1,sv:"1/4 cup"},
   {n:"Puffs",c:25,p:0,ca:5,f:0,fi:0,s:0,sv:"7 pcs"},
-  // Liquids (per oz — user can adjust serving size)
-  {n:"Breast Milk",c:20,p:0,ca:2,f:1,fi:0,s:2,sv:"1 oz"},
-  {n:"Formula",c:20,p:0,ca:2,f:1,fi:0,s:2,sv:"1 oz"},
-  {n:"Whole Milk",c:18,p:1,ca:1,f:1,fi:0,s:1,sv:"1 oz"},
-  {n:"2% Milk",c:15,p:1,ca:1,f:1,fi:0,s:1,sv:"1 oz"},
+  // Liquids — bottles are auto-logged via the Bottle button
+  // These are for non-bottle drinks (sippy cup, straw cup, etc.)
   {n:"Apple Juice",c:14,p:0,ca:4,f:0,fi:0,s:3,sv:"1 oz"},
   {n:"Orange Juice",c:14,p:0,ca:3,f:0,fi:0,s:3,sv:"1 oz"},
   {n:"Water",c:0,p:0,ca:0,f:0,fi:0,s:0,sv:"1 oz"},
@@ -1353,7 +1373,12 @@ function BottleModal({ theme, addLog, todayStr, now }) {
       </div>
       {/* Time */}
       <input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 16 }} />
-      <button onClick={() => addLog({ type: "bottle", amount: amt, feedType: ft, date: todayStr, time })} style={{ width: "100%", padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
+      <button onClick={() => {
+        const nutr = bottleNutrition(ft, amt);
+        const displayName = ft === "milk" ? "Whole Milk" : ft === "breast" ? "Breast Milk" : ft.charAt(0).toUpperCase() + ft.slice(1);
+        addLog({ type: "bottle", amount: amt, feedType: ft, date: todayStr, time, ...nutr });
+        addLog({ type: "food", foodName: `${displayName} (bottle)`, servingSize: `${amt} oz`, date: todayStr, time, source: "bottle", ...nutr });
+      }} style={{ width: "100%", padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
         Log {amt} oz {ft}
       </button>
     </div>
