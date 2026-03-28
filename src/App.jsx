@@ -505,10 +505,21 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
 
   const handleSleepToggle = () => {
     if (data.sleepState) {
-      // Waking up — stop timer immediately
-      const mins = Math.floor((now - new Date(data.sleepState.startTime)) / 60000);
-      addLog({ type: "sleep", subtype: "woke_up", date: todayStr, time: localTimeStr(now), durationMins: mins });
-      updateData("sleepState", null);
+      // Waking up — show confirmation modal
+      setModal(
+        <SleepEndModal
+          theme={theme}
+          now={now}
+          sleepState={data.sleepState}
+          todayStr={todayStr}
+          onEnd={(endTime, durationMins, date) => {
+            addLog({ type: "sleep", subtype: "woke_up", date, time: localTimeStr(endTime), durationMins });
+            updateData("sleepState", null);
+            setModal(null);
+          }}
+          onClose={() => setModal(null)}
+        />
+      );
     } else {
       // Starting sleep — show "Start Now or Edit Start Time" prompt
       setModal(
@@ -1123,6 +1134,99 @@ function SleepStartModal({ theme, now, onStart, onClose }) {
         <button onClick={() => setMode("choose")} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, cursor: "pointer" }}>← Back</button>
         <button onClick={handleCustomStart} style={{ flex: 2, padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
           Start Sleep at {customTime}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── SLEEP END MODAL ─────────────────────────────────────────
+function SleepEndModal({ theme, now, sleepState, todayStr, onEnd, onClose }) {
+  const [mode, setMode] = useState("choose"); // "choose" | "edit"
+  const [customTime, setCustomTime] = useState(localTimeStr(now));
+
+  const startTime = new Date(sleepState.startTime);
+  const startedAt = formatTime12(localTimeStr(startTime));
+  const currentMins = Math.floor((now - startTime) / 60000);
+  const currentDurLabel = currentMins >= 60
+    ? `${Math.floor(currentMins / 60)}h ${currentMins % 60}m`
+    : `${currentMins}m`;
+
+  const calcDuration = (endTime) => {
+    const mins = Math.max(0, Math.floor((endTime - startTime) / 60000));
+    return { mins, label: mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}m` : `${mins}m` };
+  };
+
+  if (mode === "choose") {
+    return (
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>☀️</div>
+        <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4 }}>Wake Up</h2>
+        <p style={{ fontSize: 13, color: theme.textMuted, marginBottom: 4 }}>
+          Started at {startedAt}
+        </p>
+        <p style={{ fontSize: 20, fontWeight: 900, color: theme.purple, fontFamily: "'Fredoka', sans-serif", marginBottom: 24 }}>
+          {currentDurLabel} asleep
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <button onClick={() => {
+            const { mins } = calcDuration(now);
+            onEnd(now, mins, todayStr);
+          }} style={{ padding: "18px 16px", borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 17, border: "none", cursor: "pointer" }}>
+            ☀️ End Now ({localTimeStr(now)})
+          </button>
+          <button onClick={() => setMode("edit")}
+            style={{ padding: "18px 16px", borderRadius: 16, background: theme.card, color: theme.text, fontWeight: 700, fontSize: 16, border: `1px solid ${theme.border}`, cursor: "pointer" }}>
+            ✏️ Edit End Time
+          </button>
+          <button onClick={onClose}
+            style={{ background: "none", border: "none", color: theme.textMuted, fontSize: 14, cursor: "pointer", padding: 8 }}>
+            Cancel (keep sleeping)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Edit end time mode
+  const handleCustomEnd = () => {
+    const [h, m] = customTime.split(":").map(Number);
+    const endDate = new Date();
+    endDate.setHours(h, m, 0, 0);
+    // If end time is before start, it must be on the same day — clamp to at least 1 min
+    const { mins } = calcDuration(endDate);
+    const date = localDateStr(endDate);
+    onEnd(endDate, Math.max(1, mins), date);
+  };
+
+  const previewMins = (() => {
+    const [h, m] = customTime.split(":").map(Number);
+    const d = new Date(); d.setHours(h, m, 0, 0);
+    return calcDuration(d);
+  })();
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4, textAlign: "center" }}>✏️ Edit End Time</h2>
+      <p style={{ fontSize: 13, color: theme.textMuted, textAlign: "center", marginBottom: 20 }}>
+        When did baby actually wake up?
+      </p>
+      <input type="time" value={customTime} onChange={e => setCustomTime(e.target.value)}
+        style={{ ...inputStyle(theme), fontSize: 24, textAlign: "center", marginBottom: 10 }} />
+      {previewMins.mins > 0 && (
+        <p style={{ fontSize: 14, color: theme.purple, fontWeight: 800, textAlign: "center", marginBottom: 20, fontFamily: "'Fredoka', sans-serif" }}>
+          = {previewMins.label} sleep
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={() => setMode("choose")}
+          style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, cursor: "pointer" }}>
+          ← Back
+        </button>
+        <button onClick={handleCustomEnd}
+          style={{ flex: 2, padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
+          End Sleep at {customTime}
         </button>
       </div>
     </div>
@@ -1980,7 +2084,7 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
   );
 }
 
-function HistoryPage({ data, theme, updateData, navigateBack, showToast }) {
+function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModal, addLog, now }) {
   const [fd, setFd] = useState(localDateStr()); const [ft, setFt] = useState("all");
   const logs = data.logs.filter(l => l.date === fd && (ft === "all" || l.type === ft));
   return (<div>
