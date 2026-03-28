@@ -50,14 +50,26 @@ export function getCurrentUser() {
 }
 
 export async function signInWithGoogle() {
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  if (isMobile) { await signInWithRedirect(auth, googleProvider); return null; }
+  // Use redirect on mobile always, and on any non-localhost origin to avoid
+  // popup blockers (common on Netlify/production HTTPS deployments).
+  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (!isLocalhost) {
+    await signInWithRedirect(auth, googleProvider);
+    return null; // result handled by checkRedirectResult() on next page load
+  }
   const cred = await signInWithPopup(auth, googleProvider);
   return cred.user;
 }
 
 export async function checkRedirectResult() {
-  try { const r = await getRedirectResult(auth); return r?.user ?? null; } catch { return null; }
+  try {
+    const r = await getRedirectResult(auth);
+    return r?.user ?? null;
+  } catch (err) {
+    // Log so we can diagnose — common cause: auth/unauthorized-domain
+    console.warn("checkRedirectResult error:", err.code, err.message);
+    return null;
+  }
 }
 
 export async function registerWithEmail(email, password, displayName) {

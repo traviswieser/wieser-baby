@@ -355,10 +355,15 @@ export default function WieserBabyApp() {
     let unsub = null;
     let dataUnsub = null;
     (async () => {
-      // Handle Google redirect result first (mobile OAuth flow)
-      await checkRedirectResult();
-      // Get current auth state
-      const user = await getCurrentUser();
+      // Handle Google redirect result first (mobile OAuth flow).
+      // getRedirectResult can only be consumed once — catch the user here
+      // before getCurrentUser() is called, otherwise the session may not
+      // be reflected yet in onAuthStateChanged.
+      const redirectUser = await checkRedirectResult();
+
+      // Get current auth state (may already include redirectUser if Firebase
+      // processed it, but we pass redirectUser as a fallback)
+      const user = redirectUser || await getCurrentUser();
       setCurrentUser(user); // null = not signed in, object = signed in
       if (!user) { setLoading(false); return; }
 
