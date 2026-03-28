@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
-import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut, getCurrentUser, checkRedirectResult } from "./firebase.js";
+import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut, getCurrentUser, checkRedirectResult, updateUserProfile } from "./firebase.js";
 import AuthScreen from "./AuthScreen.jsx";
 import BarcodeScanner from "./BarcodeScanner.jsx";
 import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders } from "./notifications.js";
@@ -361,9 +361,19 @@ export default function WieserBabyApp() {
                 )}
               </p>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {data.sleepState && <div style={{ background: theme.accentSoft, color: theme.accent, padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, animation: "pulse 2s ease-in-out infinite" }}>😴 Sleeping</div>}
-            <div style={{ fontSize: 11, color: theme.textMuted, background: theme.card, padding: "4px 10px", borderRadius: 12, border: `1px solid ${theme.border}` }}>{now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</div>
+            {/* Profile avatar — taps to Settings */}
+            <button
+              onClick={() => { setPageHistory([]); setPage("settings"); }}
+              style={{ width: 38, height: 38, borderRadius: "50%", border: `2px solid ${theme.border}`, background: theme.card, cursor: "pointer", padding: 0, overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}
+              title="Settings"
+            >
+              {currentUser?.photoURL
+                ? <img src={currentUser.photoURL} alt="profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} referrerPolicy="no-referrer" />
+                : <span style={{ fontSize: 18 }}>👤</span>
+              }
+            </button>
           </div>
         </header>
 
@@ -1109,34 +1119,8 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
   return (<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
     <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>⚙️ Settings</h2>
 
-    {/* Account card */}
-    {currentUser && (
-      <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ width: 48, height: 48, borderRadius: "50%", background: theme.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, overflow: "hidden" }}>
-          {currentUser.photoURL
-            ? <img src={currentUser.photoURL} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            : "👤"}
-        </div>
-        <div style={{ flex: 1, overflow: "hidden" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {currentUser.displayName || "My Account"}
-          </div>
-          <div style={{ fontSize: 12, color: theme.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {currentUser.email || (currentUser.isAnonymous ? "Anonymous user" : "")}
-          </div>
-        </div>
-        <button
-          onClick={async () => {
-            if (!window.confirm("Sign out?")) return;
-            await logOut();
-            setCurrentUser(null);
-          }}
-          style={{ padding: "8px 14px", borderRadius: 10, background: "rgba(229,115,115,0.12)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}
-        >
-          Sign Out
-        </button>
-      </div>
-    )}
+    {/* Account card with photo change */}
+    {currentUser && <AccountCard currentUser={currentUser} setCurrentUser={setCurrentUser} theme={theme} showToast={showToast} />}
     {(data.babies||[]).length > 1 && (
       <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
         <SectionLabel theme={theme}>Babies</SectionLabel>
@@ -1298,6 +1282,110 @@ function AddBabyModal({ theme, addBaby, onClose }) {
         <button onClick={handleAdd} disabled={!name.trim()}
           style={{ padding: 16, borderRadius: 14, background: name.trim() ? theme.accent : theme.border, color: "#fff", fontWeight: 700, fontSize: 16, border: "none", cursor: name.trim() ? "pointer" : "default", marginTop: 4 }}>
           Add {name || "Baby"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── ACCOUNT CARD (Settings) ──────────────────────────────────
+function AccountCard({ currentUser, setCurrentUser, theme, showToast }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+
+    try {
+      // Resize to 256×256 before storing — keeps the Auth profile URL small
+      const resized = await new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const SIZE = 256;
+          const canvas = document.createElement("canvas");
+          canvas.width = SIZE; canvas.height = SIZE;
+          const ctx = canvas.getContext("2d");
+          // Centre-crop to square
+          const min = Math.min(img.width, img.height);
+          const sx = (img.width  - min) / 2;
+          const sy = (img.height - min) / 2;
+          ctx.drawImage(img, sx, sy, min, min, 0, 0, SIZE, SIZE);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        };
+        img.src = url;
+      });
+
+      const updatedUser = await updateUserProfile({ photoURL: resized });
+      // Firebase Auth caches the user object — force a refresh via a shallow clone
+      setCurrentUser({ ...currentUser, photoURL: resized });
+      showToast("📸 Photo updated!");
+    } catch (err) {
+      showToast("Failed to update photo", "error");
+      console.error(err);
+    }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const photoSrc = currentUser.photoURL || null;
+
+  return (
+    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+      <SectionLabel theme={theme}>My Account</SectionLabel>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+
+        {/* Avatar with camera overlay */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", background: theme.accentSoft, border: `2px solid ${theme.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>
+            {photoSrc
+              ? <img src={photoSrc} alt="profile" referrerPolicy="no-referrer" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : "👤"
+            }
+          </div>
+          {/* Camera button overlay */}
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            style={{ position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: "50%", background: theme.accent, border: `2px solid ${theme.card}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer", padding: 0 }}
+            title="Change photo"
+          >
+            {uploading ? "⏳" : "📷"}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" capture="user" onChange={handlePhotoChange} style={{ display: "none" }} />
+        </div>
+
+        {/* Name + email */}
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {currentUser.displayName || "My Account"}
+          </div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {currentUser.email || (currentUser.isAnonymous ? "Anonymous user" : "")}
+          </div>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            style={{ marginTop: 8, padding: "5px 12px", borderRadius: 8, background: theme.accentSoft, border: `1px solid ${theme.accent}`, color: theme.accent, fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+          >
+            {uploading ? "Uploading…" : "Change Photo"}
+          </button>
+        </div>
+
+        {/* Sign out */}
+        <button
+          onClick={async () => {
+            if (!window.confirm("Sign out?")) return;
+            await logOut();
+            setCurrentUser(null);
+          }}
+          style={{ padding: "8px 14px", borderRadius: 10, background: "rgba(229,115,115,0.12)", border: "1px solid rgba(229,115,115,0.3)", color: "#e57373", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0, alignSelf: "flex-start" }}
+        >
+          Sign Out
         </button>
       </div>
     </div>

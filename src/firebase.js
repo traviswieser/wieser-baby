@@ -146,3 +146,17 @@ export function subscribeToUserData(uid, onData) {
     console.warn("Firestore snapshot error:", err.message);
   });
 }
+
+/**
+ * Update the current user's photo URL and/or display name in Firebase Auth.
+ * Accepts a base64 data-URL for photoURL.
+ */
+export async function updateUserProfile({ displayName, photoURL } = {}) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No user signed in");
+  const update = {};
+  if (displayName !== undefined) update.displayName = displayName;
+  if (photoURL     !== undefined) update.photoURL     = photoURL;
+  await updateProfile(user, update);
+  return auth.currentUser;
+}
