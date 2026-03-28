@@ -2,7 +2,8 @@
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, doc, getDoc, setDoc, onSnapshot,
-  enableIndexedDbPersistence,
+  enableIndexedDbPersistence, collection, addDoc,
+  query, where, getDocs, updateDoc, arrayUnion,
 } from "firebase/firestore";
 import {
   getAuth,
@@ -32,12 +33,9 @@ const app = initializeApp(firebaseConfig);
 export const db   = getFirestore(app);
 export const auth = getAuth(app);
 
-// Offline persistence
 enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code === "failed-precondition")
-    console.warn("Firestore persistence: multiple tabs open.");
-  else if (err.code === "unimplemented")
-    console.warn("Firestore persistence: not supported.");
+  if (err.code === "failed-precondition") console.warn("Firestore persistence: multiple tabs open.");
+  else if (err.code === "unimplemented")  console.warn("Firestore persistence: not supported.");
 });
 
 // ─── Auth providers ───────────────────────────────────────────
@@ -45,62 +43,42 @@ const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
 // ─── Auth actions ─────────────────────────────────────────────
-
-/** Returns a promise that resolves to the current user (or null). */
 export function getCurrentUser() {
   return new Promise((resolve) => {
     const unsub = onAuthStateChanged(auth, (user) => { unsub(); resolve(user); });
   });
 }
 
-/**
- * Sign in with Google.
- * Uses popup on desktop, redirect on mobile (more reliable on iOS/Android).
- */
 export async function signInWithGoogle() {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  if (isMobile) {
-    await signInWithRedirect(auth, googleProvider);
-    return null; // page will reload; catch result in checkRedirectResult()
-  }
+  if (isMobile) { await signInWithRedirect(auth, googleProvider); return null; }
   const cred = await signInWithPopup(auth, googleProvider);
   return cred.user;
 }
 
-/** Call once on app load to catch the result of a Google redirect sign-in. */
 export async function checkRedirectResult() {
-  try {
-    const result = await getRedirectResult(auth);
-    return result?.user ?? null;
-  } catch {
-    return null;
-  }
+  try { const r = await getRedirectResult(auth); return r?.user ?? null; } catch { return null; }
 }
 
-/** Register a new user with email + password. displayName is optional. */
 export async function registerWithEmail(email, password, displayName) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   if (displayName) await updateProfile(cred.user, { displayName });
   return cred.user;
 }
 
-/** Sign in an existing user with email + password. */
 export async function loginWithEmail(email, password) {
   const cred = await signInWithEmailAndPassword(auth, email, password);
   return cred.user;
 }
 
-/** Send a password-reset email. */
 export async function resetPassword(email) {
   await sendPasswordResetEmail(auth, email);
 }
 
-/** Sign out the current user. */
 export async function logOut() {
   await signOut(auth);
 }
 
-// ─── Legacy helper (kept for backward compat in App.jsx) ──────
 export async function ensureSignedIn() {
   const user = await getCurrentUser();
   if (user) return user.uid;
@@ -108,19 +86,135 @@ export async function ensureSignedIn() {
   return cred.user.uid;
 }
 
-// ─── Firestore data helpers ───────────────────────────────────
-export function getUserDocRef(uid) {
+export async function updateUserProfile({ displayName, photoURL } = {}) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No user signed in");
+  const update = {};
+  if (displayName !== undefined) update.displayName = displayName;
+  if (photoURL     !== undefined) update.photoURL     = photoURL;
+  await updateProfile(user, update);
+  return auth.currentUser;
+}
+
+// ─── Household helpers ────────────────────────────────────────
+// Data is stored at ONE of two paths depending on whether the user
+// is in a household or not:
+//   Solo:      users/{uid}/data/main
+//   Household: households/{householdId}/data/main
+//
+// We track which path to use in:
+//   localStorage key: wieser-baby-household-{uid}  →  { householdId }
+
+const HOUSEHOLD_LS_KEY = (uid) => `wieser-baby-household-${uid}`;
+
+/** Returns the householdId for this user, or null if solo. */
+export function getStoredHouseholdId(uid) {
+  try {
+    const val = localStorage.getItem(HOUSEHOLD_LS_KEY(uid));
+    return val ? JSON.parse(val).householdId : null;
+  } catch { return null; }
+}
+
+function setStoredHouseholdId(uid, householdId) {
+  localStorage.setItem(HOUSEHOLD_LS_KEY(uid), JSON.stringify({ householdId }));
+}
+
+/** Returns the Firestore data doc ref — household path if in one, solo path otherwise. */
+export function getDataDocRef(uid, householdId) {
+  if (householdId) return doc(db, "households", householdId, "data", "main");
   return doc(db, "users", uid, "data", "main");
 }
 
+/** Generates a random 6-char uppercase invite code. */
+function makeInviteCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+/**
+ * Creates a new household for the current user.
+ * Returns { householdId, inviteCode }.
+ */
+export async function createHousehold(uid, displayName) {
+  const inviteCode = makeInviteCode();
+  const householdRef = await addDoc(collection(db, "households"), {
+    memberUids:   [uid],
+    memberNames:  [displayName || "Partner 1"],
+    inviteCode,
+    createdAt:    new Date().toISOString(),
+    createdBy:    uid,
+  });
+  setStoredHouseholdId(uid, householdRef.id);
+  return { householdId: householdRef.id, inviteCode };
+}
+
+/**
+ * Joins an existing household by invite code.
+ * Returns { householdId } on success, throws on bad code.
+ */
+export async function joinHousehold(uid, displayName, inviteCode) {
+  const code = inviteCode.trim().toUpperCase();
+  const q = query(collection(db, "households"), where("inviteCode", "==", code));
+  const snap = await getDocs(q);
+  if (snap.empty) throw new Error("Invalid invite code. Double-check and try again.");
+
+  const householdDoc = snap.docs[0];
+  const householdId  = householdDoc.id;
+  const existing     = householdDoc.data();
+
+  if (existing.memberUids.includes(uid)) {
+    // Already a member — just re-link locally
+    setStoredHouseholdId(uid, householdId);
+    return { householdId };
+  }
+
+  if (existing.memberUids.length >= 6) {
+    throw new Error("This household already has the maximum number of members.");
+  }
+
+  // Add this user to the household members list
+  await updateDoc(doc(db, "households", householdId), {
+    memberUids:  arrayUnion(uid),
+    memberNames: arrayUnion(displayName || "Partner 2"),
+  });
+
+  setStoredHouseholdId(uid, householdId);
+  return { householdId };
+}
+
+/**
+ * Leaves the current household (removes local link only — data stays in Firestore).
+ * The user goes back to their private solo data path.
+ */
+export function leaveHousehold(uid) {
+  localStorage.removeItem(HOUSEHOLD_LS_KEY(uid));
+}
+
+/**
+ * Fetches the household document (member names, invite code, etc.)
+ */
+export async function getHouseholdInfo(householdId) {
+  const snap = await getDoc(doc(db, "households", householdId));
+  return snap.exists() ? { id: householdId, ...snap.data() } : null;
+}
+
+// ─── Data helpers (household-aware) ──────────────────────────
 export async function loadUserData(uid) {
-  const LOCAL_KEY = `wieser-baby-data-${uid}`;
+  const householdId = getStoredHouseholdId(uid);
+  const LOCAL_KEY   = householdId
+    ? `wieser-baby-data-household-${householdId}`
+    : `wieser-baby-data-${uid}`;
+
   try {
-    const snap = await getDoc(getUserDocRef(uid));
+    const snap = await getDoc(getDataDocRef(uid, householdId));
     if (snap.exists()) {
       const data = snap.data();
       localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
       return data;
+    }
+    // New household member — try migrating solo data across
+    if (householdId) {
+      const soloSnap = await getDoc(getDataDocRef(uid, null));
+      if (soloSnap.exists()) return soloSnap.data(); // caller will save to household path
     }
     return null;
   } catch {
@@ -130,33 +224,24 @@ export async function loadUserData(uid) {
 }
 
 export async function saveUserData(uid, data) {
-  const LOCAL_KEY = `wieser-baby-data-${uid}`;
+  const householdId = getStoredHouseholdId(uid);
+  const LOCAL_KEY   = householdId
+    ? `wieser-baby-data-household-${householdId}`
+    : `wieser-baby-data-${uid}`;
+
   localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
   try {
-    await setDoc(getUserDocRef(uid), data, { merge: true });
+    await setDoc(getDataDocRef(uid, householdId), data, { merge: true });
   } catch (err) {
     console.warn("Firestore save failed (offline?):", err.message);
   }
 }
 
 export function subscribeToUserData(uid, onData) {
-  return onSnapshot(getUserDocRef(uid), (snap) => {
+  const householdId = getStoredHouseholdId(uid);
+  return onSnapshot(getDataDocRef(uid, householdId), (snap) => {
     if (snap.exists()) onData(snap.data());
   }, (err) => {
     console.warn("Firestore snapshot error:", err.message);
   });
-}
-
-/**
- * Update the current user's photo URL and/or display name in Firebase Auth.
- * Accepts a base64 data-URL for photoURL.
- */
-export async function updateUserProfile({ displayName, photoURL } = {}) {
-  const user = auth.currentUser;
-  if (!user) throw new Error("No user signed in");
-  const update = {};
-  if (displayName !== undefined) update.displayName = displayName;
-  if (photoURL     !== undefined) update.photoURL     = photoURL;
-  await updateProfile(user, update);
-  return auth.currentUser;
 }

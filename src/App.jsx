@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
 import { ensureSignedIn, loadUserData, saveUserData, subscribeToUserData, logOut, getCurrentUser, checkRedirectResult, updateUserProfile } from "./firebase.js";
 import AuthScreen from "./AuthScreen.jsx";
+import HouseholdSync from "./HouseholdSync.jsx";
 import BarcodeScanner from "./BarcodeScanner.jsx";
 import { requestNotificationPermission, getNotificationPermission, syncReminders, cancelAllReminders } from "./notifications.js";
 import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
@@ -275,6 +276,19 @@ export default function WieserBabyApp() {
   useEffect(() => () => cancelAllReminders(), []);
 
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
+
+  // Called when user joins/leaves a household so data reloads from the new path
+  const handleHouseholdChange = () => {
+    setData(null);
+    setLoading(true);
+    getUid().then(uid => {
+      loadUserData(uid).then(raw => {
+        const d = migrateData(raw) || JSON.parse(JSON.stringify(DEFAULT_DATA));
+        setData(d);
+        setLoading(false);
+      });
+    });
+  };
   const addLog = (log) => {
     setData(d => ({ ...d, logs: [...d.logs, { ...log, id: uid(), babyId: d.activeBabyId || "baby_1", timestamp: new Date().toISOString() }] }));
     const icons = { bottle: '🍼', diaper: '💧', sleep: '😴', medicine: '💊', poop: '💩', food: '🍎', teething: '🦷' };
@@ -319,7 +333,7 @@ export default function WieserBabyApp() {
 
   const todayStr = localDateStr(now);
   const todayLogs = data.logs.filter(l => l.date === todayStr);
-  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser };
+  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange };
 
   return (
     <>
@@ -1108,7 +1122,7 @@ function CoPilotPage({ data, theme, updateData, showToast }) {
   </div>);
 }
 
-function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser }) {
+function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange }) {
   const s = data.settings || {}, b = activeBaby || data.baby || DEFAULT_BABY;
   const us = (k, v) => updateData("settings", { ...s, [k]: v });
   const ub = (k, v) => {
@@ -1143,6 +1157,18 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Theme</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{Object.entries(THEMES).map(([k, t]) => (<button key={k} className="card" onClick={() => us("theme", k)} style={{ background: t.bg, border: `2px solid ${s.theme === k ? t.accent : t.border}`, borderRadius: 16, padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 24, height: 24, borderRadius: 8, background: t.accent }} /><span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{t.name}</span>{s.theme === k && <span>✓</span>}</button>))}</div></div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>AI Provider (BYOK)</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>{[{id:"groq",l:"Groq (Free)"},{id:"openai",l:"💲 OpenAI"},{id:"anthropic",l:"💲 Claude"},{id:"gemini",l:"💲 Gemini"}].map(p => (<button key={p.id} className="card" onClick={() => us("aiProvider", p.id)} style={{ background: s.aiProvider === p.id ? theme.accentSoft : theme.bg, border: `1px solid ${s.aiProvider === p.id ? theme.accent : theme.border}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", color: s.aiProvider === p.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>{p.l}</button>))}</div><input type="password" placeholder="API Key" value={s.aiKey || ""} onChange={e => us("aiKey", e.target.value)} style={inputStyle(theme)} /><p style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>{s.aiProvider === "groq" ? "Free at console.groq.com/keys" : "Paid API key required."}</p></div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{[{p:"growth",i:"📏",l:"Growth"},{p:"activities",i:"🎯",l:"Activities"},{p:"pooplog",i:"💩",l:"Poop Log"},{p:"family",i:"👨‍👩‍👦",l:"Family"}].map(x => (<button key={x.p} className="log-btn" onClick={() => navigate(x.p)} style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, cursor: "pointer", textAlign: "center" }}><span style={{ fontSize: 22 }}>{x.i}</span><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{x.l}</div></button>))}</div>
+    {currentUser && !currentUser.isAnonymous && (
+      <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+        <SectionLabel theme={theme}>Partner Sync</SectionLabel>
+        <HouseholdSync
+          currentUser={currentUser}
+          theme={theme}
+          showToast={showToast}
+          onHouseholdChange={handleHouseholdChange}
+        />
+      </div>
+    )}
+
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
       <SectionLabel theme={theme}>Notifications</SectionLabel>
       {notifPermission === "unsupported" && <p style={{ fontSize: 13, color: theme.textMuted }}>Notifications aren't supported in this browser.</p>}
