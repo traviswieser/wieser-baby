@@ -127,6 +127,24 @@ const getLastName = (user) => {
   return parts.length > 1 ? parts[parts.length - 1] : (name || "Wieser");
 };
 
+
+// ─── Serving size number parser ──────────────────────────────────────────────
+// Extracts the leading numeric value from strings like "2 cups", "1/2", "3 oz"
+function parseServingNum(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  // Handle fractions like "1/2" or "1/4"
+  const frac = s.match(/^(\d+)\/(\d+)/);
+  if (frac) return parseInt(frac[1]) / parseInt(frac[2]);
+  // Handle mixed numbers like "1 1/2"
+  const mixed = s.match(/^(\d+)\s+(\d+)\/(\d+)/);
+  if (mixed) return parseInt(mixed[1]) + parseInt(mixed[2]) / parseInt(mixed[3]);
+  // Handle plain numbers or "2 oz", "3 cups" etc.
+  const plain = s.match(/^([\d.]+)/);
+  if (plain) return parseFloat(plain[1]);
+  return null;
+}
+
 // ─── Predictive Sleep Windows ────────────────────────────────
 /**
  * Analyses past sleep logs and returns a prediction object:
@@ -1008,11 +1026,35 @@ function FoodLogModal({ theme, addLog, data, updateData, todayStr, now, showToas
   const [fn, setFn] = useState(""); const [ss, setSs] = useState(""); const [cal, setCal] = useState(""); const [pro, setPro] = useState(""); const [carb, setCarb] = useState(""); const [fat, setFat] = useState(""); const [fib, setFib] = useState(""); const [sug, setSug] = useState(""); const [time, setTime] = useState(localTimeStr(now)); const [rx, setRx] = useState("");
   const [editingQuicks, setEditingQuicks] = useState(false);
   const [newQuick, setNewQuick] = useState({n:"",c:"",p:"",ca:"",f:"",fi:"",s:"",sv:""});
+  // Store base nutrition per 1 unit of the picked item's default serving
+  const [baseNutr, setBaseNutr] = useState(null);
 
   const qf = data.settings?.foodQuickPicks || DEFAULT_QUICK_FOODS;
   const saveQuicks = (updated) => updateData("settings", { ...(data.settings||{}), foodQuickPicks: updated });
 
-  const pick = (f) => { setFn(f.n); setCal(String(f.c||"")); setPro(String(f.p||"")); setCarb(String(f.ca||"")); setFat(String(f.f||"")); setFib(String(f.fi||"")); setSug(String(f.s||"")); setSs(f.sv||""); };
+  const pick = (f) => {
+    setFn(f.n); setSs(f.sv||"");
+    const baseQty = parseServingNum(f.sv) || 1;
+    const base = {
+      c: (f.c||0) / baseQty, p: (f.p||0) / baseQty, ca: (f.ca||0) / baseQty,
+      fat: (f.f||0) / baseQty, fi: (f.fi||0) / baseQty, s: (f.s||0) / baseQty,
+    };
+    setBaseNutr(base);
+    setCal(String(f.c||"")); setPro(String(f.p||"")); setCarb(String(f.ca||""));
+    setFat(String(f.f||"")); setFib(String(f.fi||"")); setSug(String(f.s||""));
+  };
+
+  // Called whenever serving size input changes
+  const handleServingChange = (newSs) => {
+    setSs(newSs);
+    if (!baseNutr) return;
+    const qty = parseServingNum(newSs);
+    if (!qty || qty <= 0) return;
+    const r1 = (n) => String(Math.round(n * qty * 10) / 10);
+    setCal(String(Math.round(baseNutr.c * qty)));
+    setPro(r1(baseNutr.p)); setCarb(r1(baseNutr.ca));
+    setFat(r1(baseNutr.fat)); setFib(r1(baseNutr.fi)); setSug(r1(baseNutr.s));
+  };
   const submit = () => { if (!fn) return; addLog({ type: "food", foodName: fn, servingSize: ss, calories: parseFloat(cal)||0, protein: parseFloat(pro)||0, carbs: parseFloat(carb)||0, fat: parseFloat(fat)||0, fiber: parseFloat(fib)||0, sugar: parseFloat(sug)||0, date: todayStr, time, reaction: rx }); const prefs = data.foodPreferences || { likes: [], dislikes: [] }; const k = fn.toLowerCase(); if (rx === "loved" && !prefs.likes.includes(k)) updateData("foodPreferences", { ...prefs, likes: [...prefs.likes, k], dislikes: prefs.dislikes.filter(d => d !== k) }); if (rx === "refused" && !prefs.dislikes.includes(k)) updateData("foodPreferences", { ...prefs, dislikes: [...prefs.dislikes, k], likes: prefs.likes.filter(l => l !== k) }); };
   const addQuickPick = () => {
     if (!newQuick.n.trim()) return;
@@ -1084,7 +1126,7 @@ function FoodLogModal({ theme, addLog, data, updateData, todayStr, now, showToas
         </div>
       )}
       <input placeholder="Food name" value={fn} onChange={e => setFn(e.target.value)} style={{ ...is, fontSize: 16, fontWeight: 700, marginBottom: 8 }} />
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}><input placeholder="Serving" value={ss} onChange={e => setSs(e.target.value)} style={{ ...is, flex: 1 }} /><input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...is, flex: 1 }} /></div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}><input placeholder="Serving (e.g. 2 cups)" value={ss} onChange={e => handleServingChange(e.target.value)} style={{ ...is, flex: 1 }} /><input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...is, flex: 1 }} /></div>
       <SectionLabel theme={theme}>Nutrition (optional)</SectionLabel>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
         <input placeholder="Cal" type="number" value={cal} onChange={e => setCal(e.target.value)} style={is} />
@@ -2179,6 +2221,72 @@ function SleepEditFields({ fields, set, theme, log, is }) {
   );
 }
 
+// ─── FOOD EDIT FIELDS ────────────────────────────────────────
+// Used inside EditLogModal for food logs.
+// Scales macros automatically when serving size changes.
+function FoodEditFields({ fields, set, theme, log, is }) {
+  // Derive per-unit nutrition from the original log
+  const origQty = parseServingNum(log.servingSize) || 1;
+  const baseRef = useRef({
+    calories: (log.calories || 0) / origQty,
+    protein:  (log.protein  || 0) / origQty,
+    carbs:    (log.carbs    || 0) / origQty,
+    fat:      (log.fat      || 0) / origQty,
+    fiber:    (log.fiber    || 0) / origQty,
+    sugar:    (log.sugar    || 0) / origQty,
+  });
+
+  const handleServingChange = (newSv) => {
+    set("servingSize", newSv);
+    const qty = parseServingNum(newSv);
+    if (!qty || qty <= 0) return;
+    const b = baseRef.current;
+    const r1 = (n) => Math.round(n * qty * 10) / 10;
+    set("calories", Math.round(b.calories * qty));
+    set("protein",  r1(b.protein));
+    set("carbs",    r1(b.carbs));
+    set("fat",      r1(b.fat));
+    set("fiber",    r1(b.fiber));
+    set("sugar",    r1(b.sugar));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <input placeholder="Food name" value={fields.foodName || ""}
+        onChange={e => set("foodName", e.target.value)}
+        style={{ ...is, fontWeight: 700 }} />
+
+      <div>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 4 }}>
+          SERVING SIZE
+          {origQty > 0 && <span style={{ fontWeight: 400, marginLeft: 8 }}>— macros auto-scale with quantity</span>}
+        </label>
+        <input
+          placeholder={`e.g. ${log.servingSize || "1 cup"}`}
+          value={fields.servingSize || ""}
+          onChange={e => handleServingChange(e.target.value)}
+          style={is}
+        />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {[["calories","Cal kcal"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fiber","Fiber g"],["sugar","Sugar g"]].map(([k, lbl]) => (
+          <div key={k}>
+            <label style={{ fontSize: 10, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 2 }}>{lbl.toUpperCase()}</label>
+            <input type="number" step="0.1" value={fields[k] ?? ""}
+              onChange={e => set(k, parseFloat(e.target.value) || 0)}
+              style={is} />
+          </div>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 11, color: theme.textMuted, textAlign: "center" }}>
+        Serving size scales macros automatically · edit any field to override
+      </p>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // EDIT LOG MODAL — handles all log types
 // ═══════════════════════════════════════════════════════════════
@@ -2233,18 +2341,7 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
 
       {/* ── Food ── */}
       {log.type === "food" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <input placeholder="Food name" value={fields.foodName || ""} onChange={e => set("foodName", e.target.value)} style={{ ...is, fontWeight: 700 }} />
-          <input placeholder="Serving size" value={fields.servingSize || ""} onChange={e => set("servingSize", e.target.value)} style={is} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            {[["calories","Cal"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"],["fiber","Fiber g"],["sugar","Sugar g"]].map(([k, lbl]) => (
-              <div key={k}>
-                <label style={{ fontSize: 10, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 2 }}>{lbl.toUpperCase()}</label>
-                <input type="number" step="0.1" value={fields[k] || ""} onChange={e => set(k, parseFloat(e.target.value) || 0)} style={is} />
-              </div>
-            ))}
-          </div>
-        </div>
+        <FoodEditFields fields={fields} set={set} theme={theme} log={log} is={is} />
       )}
 
       {/* ── Medicine ── */}
