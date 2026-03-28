@@ -1,6 +1,6 @@
 # HANDOFF.md — Wieser Baby
 
-> **Last updated:** v1.8.0 · 2026-03-27
+> **Last updated:** v2.1.0 · 2026-03-28
 > Read this before every dev session. Cross-reference `wieser-baby-lessons-learned.md` for hard-won rules from prior Wieser apps.
 
 ---
@@ -12,10 +12,12 @@
 | Detail | Value |
 |--------|-------|
 | Repo | `github.com/traviswieser/wieser-baby` |
-| Current version | 1.8.0 |
+| Current version | 2.1.0 |
 | Framework | React (functional components + hooks) |
-| App entry | `src/App.jsx` (~1100 lines) |
-| Firebase | `src/firebase.js` — Firestore + Auth helpers |
+| App entry | `src/App.jsx` (~1300 lines) |
+| Firebase | `src/firebase.js` — Firestore + Auth + household helpers |
+| Auth | `src/AuthScreen.jsx` — Google + email sign-in page |
+| Household | `src/HouseholdSync.jsx` — partner sync UI |
 | Notifications | `src/notifications.js` — reminder scheduler |
 | Barcode | `src/BarcodeScanner.jsx` — camera scanner |
 | Doc upload | `src/DocUpload.jsx` — file attach/preview |
@@ -66,6 +68,12 @@ git remote set-url origin https://github.com/traviswieser/wieser-baby.git
 | `11fd132` | v1.6.0 | Push notifications — feeding + medicine reminders with toggle switches in Settings |
 | `602c0e2` | v1.7.0 | Predictive sleep windows — `predictNextSleep()` algorithm + dashboard prediction card |
 | `8239af9` | v1.8.0 | Pediatrician document upload — attach photos/PDFs to doctor visit notes, gallery in Growth page |
+| `58fc877` | v1.9.0 | Google + email/password sign-in page with home screen install instructions |
+| `ee5ecc7` | v2.0.0 | Profile photo avatar in header replaces clock; change photo in Settings |
+| `4a41a0f` | — | ci: GitHub Actions workflow — auto-build on dev push, deploy to GitHub Pages |
+| `8ef5f51` | — | ci: fix Pages workflow — checkout dev, build dist/, deploy via actions/deploy-pages |
+| `72a47e8` | — | feat: new app icon (Wieser W logo) |
+| `d1567ea` | v2.1.0 | Partner sync — create/join household with 6-letter invite code, real-time shared Firestore data |
 
 ---
 
@@ -127,7 +135,14 @@ The Android/browser back button is handled via a `popstate` listener that calls 
 
 ### Data Model
 
-All data is stored as a single JSON blob under the key `"wieser-baby-data"` using the `window.storage` API.
+All app data is stored as a single JSON blob in Firestore. The path depends on whether the user is in a household:
+
+- **Solo:** `users/{uid}/data/main`
+- **Household (partner sync):** `households/{householdId}/data/main`
+
+The active path is determined at runtime by checking `localStorage` for `wieser-baby-household-{uid}`. When a user joins a household their writes automatically switch to the shared path, and `onSnapshot` keeps both partners in sync in real time.
+
+The data schema (same for both paths):
 
 ```javascript
 {
@@ -217,10 +232,15 @@ These are distilled from `wieser-baby-lessons-learned.md` — the ones that appl
 5. **Storage** — Single key (`wieser-baby-data`), whole-object read/write. No partial updates.
 6. **Scrollbar** — Hidden with `scrollbar-width: none` / `::-webkit-scrollbar { width: 0 }`.
 7. **Charts** — Recharts with `preserveAspectRatio="xMidYMid meet"` (Recharts handles this internally via `<ResponsiveContainer>`).
+8. **Firebase writes** — Always use `setDoc(..., { merge: true })`, never plain `setDoc()`. Plain writes nuke fields not included in the payload.
+9. **Firestore data path** — Determined at runtime: solo = `users/{uid}/data/main`, household = `households/{householdId}/data/main`. Path is resolved in `firebase.js` via `getDataDocRef(uid, householdId)`. Never hardcode the path elsewhere.
+10. **Auth guard** — `currentUser === undefined` means Firebase hasn't resolved yet (show splash). `null` means signed out (show AuthScreen). Object means signed in (show app).
+11. **Household join flow** — Joining copies the household path into `localStorage` keyed to the user's UID. `loadUserData` + `saveUserData` + `subscribeToUserData` all read that key to pick the right Firestore path automatically.
+12. **Google sign-in on mobile** — Must use `signInWithRedirect` (not popup). Popup is blocked by iOS/Android WebView. Always call `checkRedirectResult()` on app mount to catch the result after the page reload.
 
 ---
 
-## What's Built (v1.8.0 complete)
+## What's Built (v2.1.0)
 
 All originally planned features are now implemented:
 
@@ -233,6 +253,11 @@ All originally planned features are now implemented:
 - [x] **Predictive sleep windows** — `predictNextSleep()` in `App.jsx`. Analyzes last 20 sleep logs, computes avg awake window, shows dashboard card with confidence level.
 - [x] **Multi-baby support** — `activeBabyId` + `babies[]` array. Data migration for existing single-baby users. Per-baby log stamping. Baby switcher in header + Settings.
 - [x] **Push notifications** — `src/notifications.js`. Feeding reminder (configurable interval) + medicine check. Toggle switches in Settings. `localStorage`-persisted preferences.
+- [x] **Google + email/password auth** — `src/AuthScreen.jsx`. Sign in, create account, forgot password. Google OAuth (popup on desktop, redirect on mobile). Friendly error messages.
+- [x] **Profile photo in header** — Replaces the clock. Taps to Settings. Change photo via camera or file picker; resized to 256×256, stored in Firebase Auth profile.
+- [x] **Home screen install instructions** — Collapsible accordion on the sign-in page. Auto-detects iOS/Android/Desktop and shows the right steps. All 3 platforms available via expandable sections.
+- [x] **GitHub Actions / GitHub Pages** — `.github/workflows/deploy-pages.yml`. Every push to `dev` triggers a Vite build (with Firebase secrets injected) and deploys to `traviswieser.github.io/wieser-baby/` for free preview before Netlify deploy.
+- [x] **Partner / household sync** — `src/HouseholdSync.jsx` + `firebase.js`. One partner creates a household and gets a 6-letter invite code; the other enters it to join. Both phones then read/write the same Firestore document path (`households/{id}/data/main`) with live `onSnapshot` sync. Firestore rules updated to allow multi-UID access.
 
 ## Ideas for Future Development
 
@@ -242,6 +267,9 @@ All originally planned features are now implemented:
 - [ ] **Sleep prediction ML** — Current prediction uses simple averaging. Could use a lightweight ML model trained on the baby's own patterns for higher accuracy.
 - [ ] **Export to PDF** — Currently exports raw JSON. A formatted PDF growth report (charts + notes) would be useful for pediatrician visits.
 - [ ] **Sibling data sharing** — Multi-baby data is currently all in one Firestore document. For families with many kids, per-baby Firestore sub-collections would scale better.
+- [ ] **Household member removal** — Currently a member can only leave themselves. An admin/owner could remove a member via `updateDoc` with `arrayRemove` on `memberUids`.
+- [ ] **Household rename** — The household document has no display name yet. Could add a name field (e.g. "The Wieser Family") shown in the Partner Sync card.
+- [ ] **Push notifications for partner actions** — e.g. "Your partner just logged a feeding". Would require a server-side Cloud Function + VAPID/FCM. Currently notifications are local only.
 
 ---
 
@@ -266,9 +294,11 @@ When a build system and update popup are added, also update:
 ```
 wieser-baby/
 ├── src/
-│   ├── App.jsx              # Main app — all pages, modals, logic (~1100 lines)
+│   ├── App.jsx              # Main app — all pages, modals, logic (~1300 lines)
 │   ├── main.jsx             # React entry point
-│   ├── firebase.js          # Firebase init, auth, Firestore helpers
+│   ├── firebase.js          # Firebase init, auth, Firestore + household helpers
+│   ├── AuthScreen.jsx       # Sign-in page (Google + email/password + install guide)
+│   ├── HouseholdSync.jsx    # Partner sync UI (create household, join, member list)
 │   ├── notifications.js     # Reminder scheduler (feeding, medicine)
 │   ├── BarcodeScanner.jsx   # Full-screen camera scanner (@zxing/library)
 │   └── DocUpload.jsx        # File upload button + base64 encoder + gallery
@@ -282,6 +312,9 @@ wieser-baby/
 ├── build-post.js            # Post-build verification (checks dist/ output)
 ├── netlify.toml             # Netlify build + redirect + security headers
 ├── package.json             # Dependencies (React, Firebase, Recharts, ZXing…)
+├── .github/
+│   └── workflows/
+│       └── deploy-pages.yml # Auto-build + deploy to GitHub Pages on every dev push
 ├── .gitignore               # Ignores node_modules/, dist/, .env
 ├── wieser-baby-lessons-learned.md  # Hard-won rules from prior Wieser apps
 └── HANDOFF.md               # This file
@@ -289,4 +322,4 @@ wieser-baby/
 
 ---
 
-*Last session: 2026-03-27 — Built v1.2.0 through v1.8.0: Vite + PWA, Firebase, camera barcode scanner, multi-baby, push notifications, predictive sleep, and pediatrician document upload. All committed to `dev`. Ready for Netlify deployment whenever Travis says "deploy".*
+*Last session: 2026-03-28 — Built v1.9.0–v2.1.0: Google + email auth with install guide, profile photo avatar (replaces clock), GitHub Actions auto-deploy to GitHub Pages for free dev preview, and partner/household sync with invite code + real-time Firestore sharing. All committed to `dev`. Say "deploy" to push to `main` + Netlify.*
