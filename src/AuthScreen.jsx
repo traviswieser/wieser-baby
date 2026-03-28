@@ -76,10 +76,18 @@ export default function AuthScreen({ onSignedIn, theme }) {
   const [showInstall, setShowInstall] = useState(false);
   const platform = detectPlatform();
 
-  // Catch Google redirect result on mount (mobile flow)
+  // Catch Google redirect result on mount (any redirect flow)
   useEffect(() => {
     checkRedirectResult().then((user) => {
-      if (user) onSignedIn(user);
+      if (user) {
+        console.log("AuthScreen: redirect sign-in succeeded", user.email);
+        onSignedIn(user);
+      } else {
+        console.log("AuthScreen: no redirect user found");
+      }
+    }).catch((err) => {
+      console.error("AuthScreen: redirect error", err);
+      setError("Google sign-in failed: " + (err.message || err.code || "unknown error"));
     });
   }, []);
 
@@ -103,9 +111,15 @@ export default function AuthScreen({ onSignedIn, theme }) {
     clearMessages(); setLoading(true);
     try {
       const user = await signInWithGoogle();
-      if (user) onSignedIn(user); // null on mobile (redirect flow)
+      if (user) {
+        onSignedIn(user);
+      } else {
+        // Redirect initiated — show a message so the user knows what's happening
+        setInfo("Redirecting to Google… you will be brought back here to sign in.");
+      }
     } catch (err) {
-      setError(friendlyError(err.code));
+      console.error("Google sign-in error:", err.code, err.message);
+      setError(friendlyError(err.code) + (err.code ? ` (${err.code})` : ""));
     }
     setLoading(false);
   };

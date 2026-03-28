@@ -64,12 +64,21 @@ export async function signInWithGoogle() {
 export async function checkRedirectResult() {
   try {
     const r = await getRedirectResult(auth);
-    return r?.user ?? null;
+    if (r?.user) {
+      console.log("checkRedirectResult: got user from redirect", r.user.email);
+      return r.user;
+    }
   } catch (err) {
-    // Log so we can diagnose — common cause: auth/unauthorized-domain
     console.warn("checkRedirectResult error:", err.code, err.message);
-    return null;
   }
+  // Fallback: return whoever is currently signed in (onAuthStateChanged
+  // fires before getRedirectResult resolves on some browsers)
+  return new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      unsub();
+      resolve(user);
+    });
+  });
 }
 
 export async function registerWithEmail(email, password, displayName) {
