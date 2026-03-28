@@ -360,7 +360,7 @@ export default function WieserBabyApp() {
     const st = getSplashTheme();
     return (
       <div style={{ background: st.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
-        <img src={`${import.meta.env.BASE_URL}icon-512.png`} alt="" style={{ width: 96, height: 96, borderRadius: 24, animation: "pulse 1.5s ease-in-out infinite" }} />
+        <img src={`${import.meta.env.BASE_URL}icon-1024.png`} alt="" style={{ width: 120, height: 120, borderRadius: 28, animation: "pulse 1.5s ease-in-out infinite" }} />
         <div style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 26, fontWeight: 700 }}>
           <span style={{ color: st.accent }}>Wieser</span>
           <span style={{ color: st.text }}> Baby</span>
@@ -395,7 +395,7 @@ export default function WieserBabyApp() {
     const st = getSplashTheme();
     return (
       <div style={{ background: st.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
-        <img src={`${import.meta.env.BASE_URL}icon-512.png`} alt="" style={{ width: 96, height: 96, borderRadius: 24, animation: "pulse 1.5s ease-in-out infinite" }} />
+        <img src={`${import.meta.env.BASE_URL}icon-1024.png`} alt="" style={{ width: 120, height: 120, borderRadius: 28, animation: "pulse 1.5s ease-in-out infinite" }} />
         <div style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 26, fontWeight: 700 }}>
           <span style={{ color: st.accent }}>Wieser</span>
           <span style={{ color: st.text }}> Baby</span>

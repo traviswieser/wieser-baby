@@ -172,7 +172,7 @@ export default function AuthScreen({ onSignedIn, theme }) {
       }}>
       {/* ── Header ── */}
       <div style={{ textAlign: "center", padding: "48px 24px 32px" }}>
-        <img src={`${import.meta.env.BASE_URL}icon-512.png`} alt="Wieser Baby" style={{ width: 96, height: 96, borderRadius: 22, marginBottom: 16, display: "block", margin: "0 auto 16px" }} />
+        <img src={`${import.meta.env.BASE_URL}icon-1024.png`} alt="Wieser Baby" style={{ width: 120, height: 120, borderRadius: 28, marginBottom: 16, display: "block", margin: "0 auto 16px", imageRendering: "auto" }} />
         <h1 style={{
           fontFamily: "'Fredoka', sans-serif", fontSize: 36,
           fontWeight: 700, margin: 0,
