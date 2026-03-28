@@ -10,11 +10,21 @@ import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
 // ─── Constants & Config ───────────────────────────────────────
 const APP_VERSION = "1.3.0";
 const THEMES = {
-  midnight: { bg: "#07080d", card: "#12141c", cardHover: "#1a1d28", border: "#1e2130", accent: "#f4845f", accentSoft: "rgba(244,132,95,0.15)", text: "#e8e6e3", textMuted: "#7a7d8c", success: "#88d8b0", warning: "#f6ae2d", info: "#7eb8da", purple: "#b8a9c9", name: "Midnight" },
-  ocean: { bg: "#060d14", card: "#0c1a28", cardHover: "#122234", border: "#1a2e42", accent: "#4fc3f7", accentSoft: "rgba(79,195,247,0.15)", text: "#dce8f0", textMuted: "#5a7a90", success: "#81c784", warning: "#ffb74d", info: "#64b5f6", purple: "#ab99c7", name: "Ocean" },
-  blossom: { bg: "#faf5f2", card: "#ffffff", cardHover: "#fef7f4", border: "#f0e4de", accent: "#e8766a", accentSoft: "rgba(232,118,106,0.12)", text: "#2d2420", textMuted: "#8a7e78", success: "#6dbd8a", warning: "#e8a84c", info: "#6ba3c4", purple: "#a18dbf", name: "Blossom" },
-  forest: { bg: "#080d08", card: "#111a11", cardHover: "#182218", border: "#1e2e1e", accent: "#8bc34a", accentSoft: "rgba(139,195,74,0.15)", text: "#dce8dc", textMuted: "#5a7a5a", success: "#a5d6a7", warning: "#dce775", info: "#80cbc4", purple: "#b39ddb", name: "Forest" },
+  midnight: { bg: "#07080d", card: "#12141c", cardHover: "#1a1d28", border: "#1e2130", accent: "#f4845f", accentSoft: "rgba(244,132,95,0.15)", text: "#e8e6e3", textMuted: "#7a7d8c", success: "#88d8b0", warning: "#f6ae2d", info: "#7eb8da", purple: "#b8a9c9", name: "Midnight", dark: true },
+  ocean: { bg: "#060d14", card: "#0c1a28", cardHover: "#122234", border: "#1a2e42", accent: "#4fc3f7", accentSoft: "rgba(79,195,247,0.15)", text: "#dce8f0", textMuted: "#5a7a90", success: "#81c784", warning: "#ffb74d", info: "#64b5f6", purple: "#ab99c7", name: "Ocean", dark: true },
+  blossom: { bg: "#faf5f2", card: "#ffffff", cardHover: "#fef7f4", border: "#f0e4de", accent: "#e8766a", accentSoft: "rgba(232,118,106,0.12)", text: "#2d2420", textMuted: "#8a7e78", success: "#6dbd8a", warning: "#e8a84c", info: "#6ba3c4", purple: "#a18dbf", name: "Blossom", dark: false },
+  forest: { bg: "#080d08", card: "#111a11", cardHover: "#182218", border: "#1e2e1e", accent: "#8bc34a", accentSoft: "rgba(139,195,74,0.15)", text: "#dce8dc", textMuted: "#5a7a5a", success: "#a5d6a7", warning: "#dce775", info: "#80cbc4", purple: "#b39ddb", name: "Forest", dark: true },
+  sky: { bg: "#f0f7ff", card: "#ffffff", cardHover: "#e8f4ff", border: "#cde4f8", accent: "#2196f3", accentSoft: "rgba(33,150,243,0.12)", text: "#1a2c3d", textMuted: "#6b8aaa", success: "#43a047", warning: "#f59f00", info: "#039be5", purple: "#7c5cbf", name: "Sky", dark: false },
+  lavender: { bg: "#f5f3fa", card: "#ffffff", cardHover: "#eee9f8", border: "#ddd5f0", accent: "#7c5cbf", accentSoft: "rgba(124,92,191,0.12)", text: "#211a36", textMuted: "#8676a6", success: "#5aab74", warning: "#e09c2a", info: "#5b9bd5", purple: "#7c5cbf", name: "Lavender", dark: false },
+  mint: { bg: "#f0faf6", card: "#ffffff", cardHover: "#e4f7ee", border: "#c3e8d4", accent: "#2e8b5a", accentSoft: "rgba(46,139,90,0.12)", text: "#142b20", textMuted: "#5c8a70", success: "#2e8b5a", warning: "#d97706", info: "#0891b2", purple: "#7c6bbf", name: "Mint", dark: false },
+  galaxy: { bg: "#0a0520", card: "#130c38", cardHover: "#1c1350", border: "#261a5e", accent: "#a78bfa", accentSoft: "rgba(167,139,250,0.18)", text: "#e8e3f8", textMuted: "#7e6fac", success: "#6ee7b7", warning: "#fbbf24", info: "#60a5fa", purple: "#c084fc", name: "Galaxy", dark: true },
 };
+
+// Get the best default theme based on system preference
+function getAutoTheme() {
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return prefersDark ? "midnight" : "blossom";
+}
 
 const NAV_ITEMS = [
   { id: "dashboard", icon: "🏠", label: "Home" },
@@ -87,6 +97,12 @@ const ageString = (bd) => {
 const last7Days = () => Array.from({length: 7}, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return localDateStr(d); });
 const dayLabel = (ds) => new Date(ds + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const getLastName = (user) => {
+  if (!user) return "Wieser";
+  const name = user.displayName || "";
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1] : (name || "Wieser");
+};
 
 // ─── Predictive Sleep Windows ────────────────────────────────
 /**
@@ -168,7 +184,7 @@ const DEFAULT_DATA = {
   babies: [{ id: "baby_1", ...DEFAULT_BABY }],
   baby: { ...DEFAULT_BABY },  // kept for backward compat — mirrors active baby
   logs: [], milestones: {}, growthRecords: [],
-  settings: { theme: "midnight", aiProvider: "groq", aiKey: "", familyMembers: [] },
+  settings: { theme: "auto", aiProvider: "groq", aiKey: "", familyMembers: [] },
   familyUpdates: [], sleepState: null, pediatricianNotes: [],
   foodPreferences: { likes: [], dislikes: [] },
 };
@@ -217,7 +233,19 @@ export default function WieserBabyApp() {
   });
   const [notifPermission, setNotifPermission] = useState(getNotificationPermission);
 
-  const theme = data?.settings?.theme ? THEMES[data.settings.theme] : THEMES.midnight;
+  const [sysDark, setSysDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e) => setSysDark(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  const resolvedThemeKey = (() => {
+    const t = data?.settings?.theme || "auto";
+    if (t === "auto") return sysDark ? "midnight" : "blossom";
+    return THEMES[t] ? t : (sysDark ? "midnight" : "blossom");
+  })();
+  const theme = THEMES[resolvedThemeKey];
 
   // Multi-baby helpers
   const activeBabyId = data?.activeBabyId || "baby_1";
@@ -305,24 +333,26 @@ export default function WieserBabyApp() {
   );
 
   // Signed out — show auth screen
-  if (!currentUser) return (
-    <AuthScreen
-      theme={THEMES.midnight}
-      onSignedIn={(user) => {
-        setCurrentUser(user);
-        // Reset data and reload for the newly signed-in user
-        setData(null);
-        setLoading(true);
-        getUid().then(uid => {
-          loadUserData(uid).then(raw => {
-            const d = migrateData(raw) || JSON.parse(JSON.stringify(DEFAULT_DATA));
-            setData(d);
-            setLoading(false);
+  if (!currentUser) {
+    const authTheme = THEMES[sysDark ? "midnight" : "blossom"];
+    return (
+      <AuthScreen
+        theme={authTheme}
+        onSignedIn={(user) => {
+          setCurrentUser(user);
+          setData(null);
+          setLoading(true);
+          getUid().then(uid => {
+            loadUserData(uid).then(raw => {
+              const d = migrateData(raw) || JSON.parse(JSON.stringify(DEFAULT_DATA));
+              setData(d);
+              setLoading(false);
+            });
           });
-        });
-      }}
-    />
-  );
+        }}
+      />
+    );
+  }
 
   if (loading || !data) return (
     <div style={{ background: "#07080d", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
@@ -358,12 +388,13 @@ export default function WieserBabyApp() {
         .tab-btn { transition: all 0.15s ease; cursor: pointer; }
         .tab-btn:active { transform: scale(0.95); }
       `}</style>
-      <div style={{ fontFamily: "'Nunito', sans-serif", background: theme.bg, color: theme.text, minHeight: "100vh", maxWidth: 480, margin: "0 auto", position: "relative", paddingBottom: 90 }}>
+      <div style={{ position: "fixed", inset: 0, background: theme.bg, zIndex: -1 }} />
+      <div style={{ fontFamily: "'Nunito', sans-serif", background: theme.bg, color: theme.text, minHeight: "100vh", maxWidth: 520, margin: "0 auto", position: "relative", paddingBottom: 90 }}>
         {/* Header */}
         <header style={{ padding: "16px 20px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50, background: `linear-gradient(${theme.bg}, ${theme.bg}ee)`, backdropFilter: "blur(12px)" }}>
           <div>
-            <h1 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>
-              <span style={{ color: theme.accent }}>Wieser</span> Baby
+            <h1 onClick={() => { setPageHistory([]); setPage("dashboard"); }} style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, fontWeight: 700, letterSpacing: -0.5, cursor: "pointer" }}>
+              <span style={{ color: theme.accent }}>{getLastName(currentUser)}</span> Baby
             </h1>
             <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
                 {activeBaby.name !== "Baby" ? activeBaby.name : ""}{activeBaby.birthDate ? ` · ${ageString(activeBaby.birthDate)}` : ""}
@@ -406,7 +437,7 @@ export default function WieserBabyApp() {
         </main>
 
         {/* Bottom Nav */}
-        <nav style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: `${theme.card}f5`, backdropFilter: "blur(16px)", borderTop: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-around", padding: `8px 4px calc(8px + env(safe-area-inset-bottom, 0px))`, zIndex: 100 }}>
+        <nav style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 520, background: `${theme.card}f5`, backdropFilter: "blur(16px)", borderTop: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-around", padding: `8px 4px calc(8px + env(safe-area-inset-bottom, 0px))`, zIndex: 100 }}>
           {NAV_ITEMS.map(n => (
             <button key={n.id} className="nav-btn" onClick={() => { setPageHistory([]); setPage(n.id); }} style={{ background: page === n.id ? theme.accentSoft : "transparent", border: "none", borderRadius: 14, padding: "6px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", minWidth: 52 }}>
               <span style={{ fontSize: 20 }}>{n.icon}</span>
@@ -417,7 +448,7 @@ export default function WieserBabyApp() {
 
         {modal && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={(e) => { if (e.target === e.currentTarget) setModal(null); }}>
-            <div style={{ background: theme.card, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 480, maxHeight: "88vh", overflow: "auto", animation: "slideUp 0.25s ease", padding: "24px 20px calc(20px + env(safe-area-inset-bottom, 0px))" }}>{modal}</div>
+            <div style={{ background: theme.card, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 520, maxHeight: "88vh", overflow: "auto", animation: "slideUp 0.25s ease", padding: "24px 20px calc(20px + env(safe-area-inset-bottom, 0px))" }}>{modal}</div>
           </div>
         )}
 
@@ -1114,7 +1145,7 @@ function CoPilotPage({ data, theme, updateData, showToast }) {
     try { const res = await fetch(ep, { method: "POST", headers: hd, body: JSON.stringify(body) }); const j = await res.json(); let txt = prov === "anthropic" ? j.content?.[0]?.text : prov === "gemini" ? j.candidates?.[0]?.content?.parts?.[0]?.text : j.choices?.[0]?.message?.content; txt = txt || "Error"; setDigest(txt); updateData("familyUpdates", [...(data.familyUpdates||[]), { id: uid(), text: txt, date: localDateStr(), timestamp: new Date().toISOString() }]); } catch { setDigest("Failed. Check API key."); showToast("Failed", "error"); }
     setLoading(false);
   };
-  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16 }}>🤖 AI Co-Pilot</h2>
+  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16 }}>🤖 Baby Co-Pilot</h2>
     <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{[{id:"digest",l:"Digest"},{id:"insights",l:"Insights"},{id:"history",l:"Past"}].map(t => (<button key={t.id} className="tab-btn" onClick={() => setTab(t.id)} style={{ background: tab === t.id ? theme.accentSoft : theme.card, border: `1px solid ${tab === t.id ? theme.accent : theme.border}`, borderRadius: 14, padding: "8px 14px", color: tab === t.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>{t.l}</button>))}</div>
     {tab === "digest" && (<><button className="log-btn" onClick={gen} disabled={loading} style={{ width: "100%", padding: 20, borderRadius: 20, background: `linear-gradient(135deg, ${theme.accent}, ${theme.purple})`, color: "#fff", fontWeight: 800, fontSize: 18, border: "none", cursor: "pointer", marginBottom: 16, opacity: loading ? 0.6 : 1 }}>{loading ? "✨ Generating..." : "✨ Generate Digest"}</button>{digest && <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, animation: "fadeIn 0.3s" }}><p style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{digest}</p><button onClick={() => { navigator.clipboard?.writeText(digest); showToast("Copied!"); }} style={{ marginTop: 12, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 12, padding: "8px 16px", color: theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>📋 Copy</button></div>}<p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 12 }}>Using: {data.settings?.aiProvider?.toUpperCase()||"GROQ"} {data.settings?.aiProvider !== "groq" && "💲"}</p></>)}
     {tab === "insights" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}><div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: theme.warning }}>💩 Poop Health</h3><p style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>{(()=>{ const pp = data.logs.filter(l=>l.type==="poop"); if (pp.length < 3) return "Log more poops for insights!"; const a = pp.filter(p=>POOP_COLORS.find(c=>c.id===p.color)?.status==="alert").length; return a > 0 ? `${a} flagged. Check Poop Patterns.` : "All recent poops look healthy!"; })()}</p></div><div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: theme.success }}>🍎 Nutrition</h3><p style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>{data.logs.filter(l=>l.type==="food").length > 3 ? `${(data.foodPreferences?.likes||[]).length} favorite foods. ${(data.foodPreferences?.dislikes||[]).length} dislikes tracked.` : "Log more foods for insights!"}</p></div></div>}
@@ -1154,7 +1185,26 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
       <button onClick={() => setModal(<AddBabyModal theme={theme} addBaby={addBaby} onClose={() => setModal(null)} />)} style={{ width: "100%", padding: 12, borderRadius: 12, background: "none", border: `1px dashed ${theme.border}`, color: theme.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Another Baby</button>
     )}
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Baby Profile</SectionLabel><input placeholder="Name" value={b.name === "Baby" ? "" : b.name} onChange={e => ub("name", e.target.value || "Baby")} style={{ ...inputStyle(theme), fontSize: 16, marginBottom: 10 }} /><label style={{ fontSize: 12, color: theme.textMuted, display: "block", marginBottom: 4 }}>Birth Date</label><input type="date" value={b.birthDate} onChange={e => ub("birthDate", e.target.value)} style={inputStyle(theme)} />{b.birthDate && <p style={{ fontSize: 13, color: theme.accent, marginTop: 8, fontWeight: 700 }}>{ageString(b.birthDate)}</p>}</div>
-    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Theme</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{Object.entries(THEMES).map(([k, t]) => (<button key={k} className="card" onClick={() => us("theme", k)} style={{ background: t.bg, border: `2px solid ${s.theme === k ? t.accent : t.border}`, borderRadius: 16, padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 24, height: 24, borderRadius: 8, background: t.accent }} /><span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{t.name}</span>{s.theme === k && <span>✓</span>}</button>))}</div></div>
+    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+      <SectionLabel theme={theme}>Theme</SectionLabel>
+      <button onClick={() => us("theme", "auto")} style={{ width: "100%", marginBottom: 12, padding: "12px 16px", borderRadius: 14, background: s.theme === "auto" ? theme.accentSoft : theme.bg, border: `2px solid ${s.theme === "auto" ? theme.accent : theme.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 22 }}>✨</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: s.theme === "auto" ? theme.accent : theme.text }}>Auto (match device)</span>
+        {s.theme === "auto" && <span style={{ marginLeft: "auto", color: theme.accent }}>✓</span>}
+      </button>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {Object.entries(THEMES).map(([k, t]) => (
+          <button key={k} className="card" onClick={() => us("theme", k)} style={{ background: t.bg, border: `2px solid ${s.theme === k ? t.accent : t.border}`, borderRadius: 16, padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 24, height: 24, borderRadius: 8, background: t.accent }} />
+            <div style={{ flex: 1, textAlign: "left" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{t.name}</div>
+              <div style={{ fontSize: 10, color: t.dark ? "#888" : "#aaa" }}>{t.dark ? "Dark" : "Light"}</div>
+            </div>
+            {s.theme === k && <span style={{ color: t.accent }}>✓</span>}
+          </button>
+        ))}
+      </div>
+    </div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>AI Provider (BYOK)</SectionLabel><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>{[{id:"groq",l:"Groq (Free)"},{id:"openai",l:"💲 OpenAI"},{id:"anthropic",l:"💲 Claude"},{id:"gemini",l:"💲 Gemini"}].map(p => (<button key={p.id} className="card" onClick={() => us("aiProvider", p.id)} style={{ background: s.aiProvider === p.id ? theme.accentSoft : theme.bg, border: `1px solid ${s.aiProvider === p.id ? theme.accent : theme.border}`, borderRadius: 12, padding: "10px 14px", cursor: "pointer", color: s.aiProvider === p.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>{p.l}</button>))}</div><input type="password" placeholder="API Key" value={s.aiKey || ""} onChange={e => us("aiKey", e.target.value)} style={inputStyle(theme)} /><p style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>{s.aiProvider === "groq" ? "Free at console.groq.com/keys" : "Paid API key required."}</p></div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{[{p:"growth",i:"📏",l:"Growth"},{p:"activities",i:"🎯",l:"Activities"},{p:"pooplog",i:"💩",l:"Poop Log"},{p:"family",i:"👨‍👩‍👦",l:"Family"}].map(x => (<button key={x.p} className="log-btn" onClick={() => navigate(x.p)} style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, cursor: "pointer", textAlign: "center" }}><span style={{ fontSize: 22 }}>{x.i}</span><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{x.l}</div></button>))}</div>
     {currentUser && !currentUser.isAnonymous && (

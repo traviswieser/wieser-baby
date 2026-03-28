@@ -162,12 +162,14 @@ export default function AuthScreen({ onSignedIn, theme }) {
   const install = INSTALL_STEPS[platform];
 
   return (
-    <div style={{
-      minHeight: "100vh", background: t.bg, color: t.text,
-      fontFamily: "'Nunito', sans-serif",
-      display: "flex", flexDirection: "column", alignItems: "center",
-      padding: "0 0 60px",
-    }}>
+    <>
+      <style>{`body { background: ${t.bg} !important; margin: 0; }`}</style>
+      <div style={{
+        minHeight: "100vh", background: t.bg, color: t.text,
+        fontFamily: "'Nunito', sans-serif",
+        display: "flex", flexDirection: "column", alignItems: "center",
+        padding: "0 0 60px",
+      }}>
       {/* ── Header ── */}
       <div style={{ textAlign: "center", padding: "48px 24px 32px" }}>
         <div style={{ fontSize: 56, marginBottom: 12 }}>👶</div>
@@ -386,5 +388,6 @@ export default function AuthScreen({ onSignedIn, theme }) {
         By signing in you agree to keep your baby's data safe. ❤️
       </p>
     </div>
+    </>
   );
 }
