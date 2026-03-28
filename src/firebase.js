@@ -50,15 +50,26 @@ export function getCurrentUser() {
 }
 
 export async function signInWithGoogle() {
-  // Use redirect on mobile always, and on any non-localhost origin to avoid
-  // popup blockers (common on Netlify/production HTTPS deployments).
-  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (!isLocalhost) {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  if (isMobile) {
+    // Mobile: always use redirect (popups blocked by WebView)
     await signInWithRedirect(auth, googleProvider);
-    return null; // result handled by checkRedirectResult() on next page load
+    return null;
   }
-  const cred = await signInWithPopup(auth, googleProvider);
-  return cred.user;
+
+  // Desktop: try popup first (avoids third-party cookie issues with redirect)
+  try {
+    const cred = await signInWithPopup(auth, googleProvider);
+    return cred.user;
+  } catch (err) {
+    if (err.code === "auth/popup-blocked" || err.code === "auth/popup-closed-by-user") {
+      // Fall back to redirect if popup was blocked
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function checkRedirectResult() {
