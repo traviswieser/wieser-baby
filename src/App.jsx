@@ -601,9 +601,11 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
 
   // Sort by actual recorded time (date+time), falling back to entry timestamp
   const logActualTime = (l) => (l.date && l.time) ? `${l.date}T${l.time}` : (l.timestamp || "");
-  const lastBottle = [...bottles].sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  const lastPoop   = [...poops].sort((a,b)   => logActualTime(b).localeCompare(logActualTime(a)))[0];
-  const lastFood   = [...foods].filter(f => f.source !== "bottle").sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastBottle  = [...bottles].sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastPoop    = [...poops].sort((a,b)   => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  const lastFood    = [...foods].filter(f => f.source !== "bottle").sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
+  // Only count completed woke_up sleeps for the time-since label
+  const lastSleep   = [...sleeps].filter(l => l.subtype === "woke_up").sort((a,b) => logActualTime(b).localeCompare(logActualTime(a)))[0];
 
   const timeAgo = (log) => {
     if (!log) return null;
@@ -658,7 +660,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <QuickLogButton icon="🍼" label="Bottle" sublabel={timeAgo(lastBottle) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<BottleModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
-        <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (sleeps.length > 0 ? timeAgo([...sleeps].sort((a,b)=>logActualTime(b).localeCompare(logActualTime(a)))[0]) : "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
+        <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (timeAgo(lastSleep) || "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
         <QuickLogButton icon="💩" label="Poop" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.warning} theme={theme} onClick={() => setModal(<PoopModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickLogButton icon="🍎" label="Food" sublabel={timeAgo(lastFood) || "not yet today"} color={theme.success} theme={theme} onClick={() => setModal(<FoodLogModal theme={theme} addLog={addLog} data={data} updateData={updateData} todayStr={todayStr} now={now} showToast={showToast} />)} />
       </div>
