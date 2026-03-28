@@ -355,9 +355,14 @@ export default function WieserBabyApp() {
     let dataUnsub = null;
     (async () => {
       // On mobile, Google sign-in uses a redirect. getRedirectResult() can only
-      // be called once per redirect — App.jsx must consume AND use it here,
-      // before AuthScreen mounts and tries to call it (and gets nothing).
-      const redirectUser = await checkRedirectResult();
+      // be called once per redirect — App.jsx must consume AND use it here.
+      let redirectUser = null;
+      try {
+        redirectUser = await checkRedirectResult();
+      } catch (err) {
+        console.error("App redirect error:", err.code, err.message);
+        // Don't block — fall through to getCurrentUser
+      }
       const user = redirectUser || await getCurrentUser();
       setCurrentUser(user);
       if (!user) { setLoading(false); return; }

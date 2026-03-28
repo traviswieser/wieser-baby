@@ -62,10 +62,13 @@ export async function signInWithGoogle() {
 export async function checkRedirectResult() {
   try {
     const r = await getRedirectResult(auth);
+    if (r?.user) console.log("checkRedirectResult: got user", r.user.email);
+    else console.log("checkRedirectResult: no redirect user. auth.currentUser=", auth.currentUser?.email ?? "null");
     return r?.user ?? null;
   } catch (err) {
-    console.warn("checkRedirectResult error:", err.code, err.message);
-    return null;
+    // Re-throw so the caller can show the error on screen
+    console.error("checkRedirectResult FAILED:", err.code, err.message);
+    throw err;
   }
 }
 
