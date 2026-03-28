@@ -1370,29 +1370,163 @@ function GrowthPage({ data, updateData, theme, showToast, navigateBack }) {
   </div>);
 }
 
-function CoPilotPage({ data, theme, updateData, showToast }) {
-  const [digest, setDigest] = useState(""); const [loading, setLoading] = useState(false); const [tab, setTab] = useState("digest");
-  const gen = async () => {
+function CoPilotPage({ data, theme, updateData, showToast, todayStr }) {
+  const [digest, setDigest] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState("digest");
+
+  const genDigest = async (silent = false) => {
     const key = data.settings?.aiKey, prov = data.settings?.aiProvider || "groq";
-    if (!key) { showToast("Set AI key in Settings", "error"); return; }
-    setLoading(true);
-    const l7 = last7Days(), wl = data.logs.filter(l => l7.includes(l.date)), pp = wl.filter(l => l.type === "poop"), fl = wl.filter(l => l.type === "food");
-    const sum = { bottles: wl.filter(l=>l.type==="bottle").length, totalOz: wl.filter(l=>l.type==="bottle").reduce((s,l)=>s+(l.amount||0),0), poops: pp.length, poopColors: pp.map(p=>POOP_COLORS.find(c=>c.id===p.color)?.label).filter(Boolean), foods: fl.map(f=>f.foodName).filter(Boolean), totalCal: fl.reduce((s,f)=>s+(f.calories||0),0), sleeps: wl.filter(l=>l.type==="sleep").length, milestones: Object.entries(data.milestones||{}).filter(([_,d])=>l7.includes(d)).map(([k])=>k.split('_').slice(1).join(' ')), likes: (data.foodPreferences?.likes||[]).join(', ') };
-    const prompt = `Warm baby care assistant. Write 2-3 paragraph weekly digest for ${data.baby.name||"baby"}'s family from: ${JSON.stringify(sum)}. Include poop/food patterns. Be warm. End with emoji.`;
+    if (!key) { if (!silent) showToast("Set AI key in Settings first", "error"); return null; }
+    if (!silent) setLoading(true);
+    const l7 = last7Days(), wl = data.logs.filter(l => l7.includes(l.date));
+    const pp = wl.filter(l => l.type === "poop"), fl = wl.filter(l => l.type === "food");
+    const sum = {
+      babyName: data.baby?.name || "baby",
+      bottles: wl.filter(l=>l.type==="bottle").length,
+      totalOz: wl.filter(l=>l.type==="bottle").reduce((s,l)=>s+(l.amount||0),0),
+      poops: pp.length, poopColors: pp.map(p=>POOP_COLORS.find(c=>c.id===p.color)?.label).filter(Boolean),
+      foods: fl.map(f=>f.foodName).filter(Boolean), totalCal: fl.reduce((s,f)=>s+(f.calories||0),0),
+      sleeps: wl.filter(l=>l.type==="sleep").length,
+      milestones: Object.entries(data.milestones||{}).filter(([,d])=>l7.includes(d)).map(([k])=>k.split("_").slice(1).join(" ")),
+      likes: (data.foodPreferences?.likes||[]).join(", "),
+    };
+    const prompt = `Warm baby care assistant. Write 2-3 paragraph daily digest for ${sum.babyName}'s family based on data: ${JSON.stringify(sum)}. Mention feeding, sleep, poop patterns, and food. Be warm and encouraging. End with a supportive emoji.`;
     let ep, hd, body;
     if (prov === "groq") { ep = "https://api.groq.com/openai/v1/chat/completions"; hd = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }; body = { model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: prompt }], temperature: 0.7, max_tokens: 700 }; }
     else if (prov === "openai") { ep = "https://api.openai.com/v1/chat/completions"; hd = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }; body = { model: "gpt-4o-mini", messages: [{ role: "user", content: prompt }], temperature: 0.7, max_tokens: 700 }; }
     else if (prov === "anthropic") { ep = "https://api.anthropic.com/v1/messages"; hd = { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }; body = { model: "claude-sonnet-4-20250514", messages: [{ role: "user", content: prompt }], max_tokens: 700 }; }
     else { ep = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${key}`; hd = { "Content-Type": "application/json" }; body = { contents: [{ parts: [{ text: prompt }] }] }; }
-    try { const res = await fetch(ep, { method: "POST", headers: hd, body: JSON.stringify(body) }); const j = await res.json(); let txt = prov === "anthropic" ? j.content?.[0]?.text : prov === "gemini" ? j.candidates?.[0]?.content?.parts?.[0]?.text : j.choices?.[0]?.message?.content; txt = txt || "Error"; setDigest(txt); updateData("familyUpdates", [...(data.familyUpdates||[]), { id: uid(), text: txt, date: localDateStr(), timestamp: new Date().toISOString() }]); } catch { setDigest("Failed. Check API key."); showToast("Failed", "error"); }
-    setLoading(false);
+    try {
+      const res = await fetch(ep, { method: "POST", headers: hd, body: JSON.stringify(body) });
+      const j = await res.json();
+      let txt = prov === "anthropic" ? j.content?.[0]?.text : prov === "gemini" ? j.candidates?.[0]?.content?.parts?.[0]?.text : j.choices?.[0]?.message?.content;
+      txt = txt || "Error generating digest.";
+      if (!silent) setDigest(txt);
+      const entry = { id: uid(), text: txt, date: todayStr, timestamp: new Date().toISOString() };
+      updateData("familyUpdates", [...(data.familyUpdates||[]), entry]);
+      if (!silent) setLoading(false);
+      return txt;
+    } catch {
+      if (!silent) { setDigest("Failed. Check API key and connection."); showToast("Failed", "error"); setLoading(false); }
+      return null;
+    }
   };
-  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16 }}>🤖 Baby Co-Pilot</h2>
-    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{[{id:"digest",l:"Digest"},{id:"insights",l:"Insights"},{id:"history",l:"Past"}].map(t => (<button key={t.id} className="tab-btn" onClick={() => setTab(t.id)} style={{ background: tab === t.id ? theme.accentSoft : theme.card, border: `1px solid ${tab === t.id ? theme.accent : theme.border}`, borderRadius: 14, padding: "8px 14px", color: tab === t.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>{t.l}</button>))}</div>
-    {tab === "digest" && (<><button className="log-btn" onClick={gen} disabled={loading} style={{ width: "100%", padding: 20, borderRadius: 20, background: `linear-gradient(135deg, ${theme.accent}, ${theme.purple})`, color: "#fff", fontWeight: 800, fontSize: 18, border: "none", cursor: "pointer", marginBottom: 16, opacity: loading ? 0.6 : 1 }}>{loading ? "✨ Generating..." : "✨ Generate Digest"}</button>{digest && <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, animation: "fadeIn 0.3s" }}><p style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{digest}</p><button onClick={() => { navigator.clipboard?.writeText(digest); showToast("Copied!"); }} style={{ marginTop: 12, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 12, padding: "8px 16px", color: theme.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>📋 Copy</button></div>}<p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 12 }}>Using: {data.settings?.aiProvider?.toUpperCase()||"GROQ"} {data.settings?.aiProvider !== "groq" && "💲"}</p></>)}
-    {tab === "insights" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}><div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: theme.warning }}>💩 Poop Health</h3><p style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>{(()=>{ const pp = data.logs.filter(l=>l.type==="poop"); if (pp.length < 3) return "Log more poops for insights!"; const a = pp.filter(p=>POOP_COLORS.find(c=>c.id===p.color)?.status==="alert").length; return a > 0 ? `${a} flagged. Check Poop Patterns.` : "All recent poops look healthy!"; })()}</p></div><div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: theme.success }}>🍎 Nutrition</h3><p style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>{data.logs.filter(l=>l.type==="food").length > 3 ? `${(data.foodPreferences?.likes||[]).length} favorite foods. ${(data.foodPreferences?.dislikes||[]).length} dislikes tracked.` : "Log more foods for insights!"}</p></div></div>}
-    {tab === "history" && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{(data.familyUpdates||[]).length === 0 ? <p style={{ color: theme.textMuted, textAlign: "center", padding: 30 }}>No digests yet.</p> : [...(data.familyUpdates||[])].reverse().map(u => (<div key={u.id} style={{ background: theme.card, borderRadius: 16, padding: 16, border: `1px solid ${theme.border}` }}><p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8 }}>{u.date}</p><p style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{u.text}</p></div>))}</div>}
-  </div>);
+
+  // Auto-generate digest at the start of each new day (if key is set and no digest for today yet)
+  useEffect(() => {
+    if (!data.settings?.aiKey) return;
+    const todayDigests = (data.familyUpdates||[]).filter(u => u.date === todayStr);
+    if (todayDigests.length === 0) {
+      // Only auto-generate after a short delay so the UI is settled
+      const t = setTimeout(() => genDigest(true), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [todayStr, data.settings?.aiKey]);
+
+  const todayDigests = (data.familyUpdates||[]).filter(u => u.date === todayStr);
+  const latestToday = todayDigests[todayDigests.length - 1];
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16 }}>🤖 Baby Co-Pilot</h2>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[{id:"digest",l:"Today"},{id:"insights",l:"Insights"},{id:"history",l:"All Digests"}].map(t => (
+          <button key={t.id} className="tab-btn" onClick={() => setTab(t.id)}
+            style={{ background: tab === t.id ? theme.accentSoft : theme.card, border: `1px solid ${tab === t.id ? theme.accent : theme.border}`, borderRadius: 14, padding: "8px 14px", color: tab === t.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {tab === "digest" && (
+        <>
+          {/* Auto-generation note */}
+          {data.settings?.aiKey && (
+            <div style={{ background: theme.accentSoft, borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: theme.accent, fontWeight: 600 }}>
+              ✨ Auto-generates a new digest each morning
+            </div>
+          )}
+          {!data.settings?.aiKey && (
+            <div style={{ background: `${theme.warning}18`, borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: theme.warning, fontWeight: 600 }}>
+              ⚠️ Add your AI key in Settings to enable auto-generation
+            </div>
+          )}
+          <button className="log-btn" onClick={() => genDigest(false)} disabled={loading}
+            style={{ width: "100%", padding: 18, borderRadius: 20, background: `linear-gradient(135deg, ${theme.accent}, ${theme.purple})`, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer", marginBottom: 16, opacity: loading ? 0.7 : 1 }}>
+            {loading ? "✨ Generating…" : "✨ Generate New Digest"}
+          </button>
+
+          {/* Show today's digest or newly generated one */}
+          {(digest || latestToday) && (
+            <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, animation: "fadeIn 0.3s" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontSize: 12, color: theme.textMuted, fontWeight: 700 }}>
+                  {latestToday ? latestToday.date : todayStr}
+                </span>
+                <button onClick={() => { const text = digest || latestToday?.text || ""; navigator.clipboard?.writeText(text); showToast("Copied!"); }}
+                  style={{ background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 10, padding: "5px 12px", color: theme.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+                  📋 Copy
+                </button>
+              </div>
+              <p style={{ fontSize: 14, lineHeight: 1.75, whiteSpace: "pre-wrap" }}>{digest || latestToday?.text}</p>
+            </div>
+          )}
+          <p style={{ fontSize: 11, color: theme.textMuted, textAlign: "center", marginTop: 10 }}>
+            Provider: {(data.settings?.aiProvider || "groq").toUpperCase()} {data.settings?.aiProvider && data.settings.aiProvider !== "groq" ? "💲" : "(free)"}
+          </p>
+        </>
+      )}
+
+      {tab === "insights" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+            <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: theme.warning }}>💩 Poop Health</h3>
+            <p style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>
+              {(() => { const pp = data.logs.filter(l=>l.type==="poop"); if (pp.length < 3) return "Log more poops for insights!"; const a = pp.filter(p=>POOP_COLORS.find(c=>c.id===p.color)?.status==="alert").length; return a > 0 ? `${a} alert(s) in recent logs. Check Poop Patterns page.` : "All recent poops look healthy! 👍"; })()}
+            </p>
+          </div>
+          <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+            <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: theme.success }}>🍎 Nutrition</h3>
+            <p style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>
+              {data.logs.filter(l=>l.type==="food").length > 3
+                ? `${(data.foodPreferences?.likes||[]).length} favorite foods · ${(data.foodPreferences?.dislikes||[]).length} dislikes tracked.`
+                : "Log more foods to see nutrition insights!"}
+            </p>
+          </div>
+          <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+            <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8, color: theme.purple }}>😴 Sleep</h3>
+            <p style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>
+              {(() => {
+                const sleeps = data.logs.filter(l=>l.type==="sleep"&&l.subtype==="woke_up"&&l.durationMins);
+                if (sleeps.length < 3) return "Log more sleeps for insights!";
+                const avg = Math.round(sleeps.slice(-7).reduce((s,l)=>s+(l.durationMins||0),0) / Math.min(sleeps.length,7));
+                return avg >= 60 ? `Avg nap: ${Math.floor(avg/60)}h ${avg%60}m over last 7 logs.` : `Avg nap: ${avg}m over last 7 logs.`;
+              })()}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === "history" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(data.familyUpdates||[]).length === 0
+            ? <p style={{ color: theme.textMuted, textAlign: "center", padding: 30 }}>No digests yet.</p>
+            : [...(data.familyUpdates||[])].reverse().map(u => (
+              <div key={u.id} style={{ background: theme.card, borderRadius: 16, padding: 16, border: `1px solid ${theme.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <p style={{ fontSize: 12, color: theme.accent, fontWeight: 700 }}>{u.date}</p>
+                  <button onClick={() => { navigator.clipboard?.writeText(u.text); showToast("Copied!"); }}
+                    style={{ background: "none", border: "none", color: theme.textMuted, fontSize: 11, cursor: "pointer" }}>📋</button>
+                </div>
+                <p style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{u.text}</p>
+              </div>
+            ))
+          }
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby, activeBabyId, switchBaby, addBaby, setModal, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange }) {
