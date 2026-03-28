@@ -354,10 +354,11 @@ export default function WieserBabyApp() {
   useEffect(() => {
     let dataUnsub = null;
     (async () => {
-      // Handle Google redirect result first (mobile OAuth flow)
-      await checkRedirectResult();
-      // Get current auth state
-      const user = await getCurrentUser();
+      // On mobile, Google sign-in uses a redirect. getRedirectResult() can only
+      // be called once per redirect — App.jsx must consume AND use it here,
+      // before AuthScreen mounts and tries to call it (and gets nothing).
+      const redirectUser = await checkRedirectResult();
+      const user = redirectUser || await getCurrentUser();
       setCurrentUser(user);
       if (!user) { setLoading(false); return; }
 
