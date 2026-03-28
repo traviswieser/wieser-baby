@@ -12,6 +12,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      cacheId: "wieser-baby-v271",
       base,
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-1024.png"],
       manifest: {

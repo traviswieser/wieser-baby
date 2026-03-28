@@ -8,7 +8,7 @@ import { requestNotificationPermission, getNotificationPermission, syncReminders
 import { DocUploadButton, DocGallery } from "./DocUpload.jsx";
 
 // ─── Constants & Config ───────────────────────────────────────
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "2.7.1";
 const THEMES = {
   midnight: { bg: "#07080d", card: "#12141c", cardHover: "#1a1d28", border: "#1e2130", accent: "#f4845f", accentSoft: "rgba(244,132,95,0.15)", text: "#e8e6e3", textMuted: "#7a7d8c", success: "#88d8b0", warning: "#f6ae2d", info: "#7eb8da", purple: "#b8a9c9", name: "Midnight", dark: true },
   ocean: { bg: "#060d14", card: "#0c1a28", cardHover: "#122234", border: "#1a2e42", accent: "#4fc3f7", accentSoft: "rgba(79,195,247,0.15)", text: "#dce8f0", textMuted: "#5a7a90", success: "#81c784", warning: "#ffb74d", info: "#64b5f6", purple: "#ab99c7", name: "Ocean", dark: true },
@@ -348,7 +348,7 @@ export default function WieserBabyApp() {
     showToast("👶 " + name + " added!");
   };
 
-  useEffect(() => { const i = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(i); }, []);
+  useEffect(() => { const i = setInterval(() => setNow(new Date()), 10000); return () => clearInterval(i); }, []);
 
   // Check auth state on mount, then load data
   useEffect(() => {
