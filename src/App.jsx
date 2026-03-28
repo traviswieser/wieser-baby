@@ -945,6 +945,7 @@ function FoodPrefsTab({ prefs, data, updateData, theme, showToast }) {
 
 // ─── FOOD LOG MODAL ───────────────────────────────────────────
 const DEFAULT_QUICK_FOODS = [
+  // Solids
   {n:"Banana",c:89,p:1,ca:23,f:0,fi:3,s:12,sv:"1 medium"},
   {n:"Avocado",c:80,p:1,ca:4,f:7,fi:3,s:0,sv:"1/4"},
   {n:"Sweet Potato",c:86,p:2,ca:20,f:0,fi:3,s:4,sv:"1/2 cup"},
@@ -955,6 +956,14 @@ const DEFAULT_QUICK_FOODS = [
   {n:"PB",c:95,p:4,ca:3,f:8,fi:1,s:2,sv:"1 tbsp"},
   {n:"Rice Cereal",c:60,p:1,ca:13,f:0,fi:0,s:1,sv:"1/4 cup"},
   {n:"Puffs",c:25,p:0,ca:5,f:0,fi:0,s:0,sv:"7 pcs"},
+  // Liquids (per oz — user can adjust serving size)
+  {n:"Breast Milk",c:20,p:0,ca:2,f:1,fi:0,s:2,sv:"1 oz"},
+  {n:"Formula",c:20,p:0,ca:2,f:1,fi:0,s:2,sv:"1 oz"},
+  {n:"Whole Milk",c:18,p:1,ca:1,f:1,fi:0,s:1,sv:"1 oz"},
+  {n:"2% Milk",c:15,p:1,ca:1,f:1,fi:0,s:1,sv:"1 oz"},
+  {n:"Apple Juice",c:14,p:0,ca:4,f:0,fi:0,s:3,sv:"1 oz"},
+  {n:"Orange Juice",c:14,p:0,ca:3,f:0,fi:0,s:3,sv:"1 oz"},
+  {n:"Water",c:0,p:0,ca:0,f:0,fi:0,s:0,sv:"1 oz"},
 ];
 
 function FoodLogModal({ theme, addLog, data, updateData, todayStr, now, showToast }) {
@@ -991,7 +1000,7 @@ function FoodLogModal({ theme, addLog, data, updateData, todayStr, now, showToas
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, maxHeight: 200, overflowY: "auto" }}>
             {qf.map((f, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: theme.bg, borderRadius: 10, padding: "8px 12px", border: `1px solid ${theme.border}` }}>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{f.n}</span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: theme.text }}>{f.n}</span>
                 <span style={{ fontSize: 11, color: theme.textMuted }}>{f.c||0} cal · {f.sv||""}</span>
                 <button onClick={() => removeQuickPick(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "#e57373", fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
               </div>
@@ -1011,7 +1020,30 @@ function FoodLogModal({ theme, addLog, data, updateData, todayStr, now, showToas
           <button onClick={resetQuicks} style={{ width: "100%", padding: 8, borderRadius: 10, background: "none", border: `1px solid ${theme.border}`, color: theme.textMuted, fontSize: 12, cursor: "pointer" }}>Reset to defaults</button>
         </div>
       ) : (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>{qf.map((f,i) => (<button key={i} onClick={() => pick(f)} style={{ background: fn === f.n ? theme.accentSoft : theme.bg, border: `1px solid ${fn === f.n ? theme.accent : theme.border}`, borderRadius: 10, padding: "6px 12px", color: fn === f.n ? theme.accent : theme.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{f.n}</button>))}</div>
+        <div style={{ marginBottom: 16 }}>
+          {/* Group by liquid vs solid based on sv containing "oz" */}
+          {(() => {
+            const solids = qf.filter(f => !(f.sv||"").includes("oz") || f.n === "Water");
+            const liquids = qf.filter(f => (f.sv||"").includes("oz") && f.n !== "Water");
+            const renderGroup = (items, label) => items.length === 0 ? null : (
+              <div style={{ marginBottom: 10 }}>
+                <p style={{ fontSize: 10, fontWeight: 800, color: theme.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>{label}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {items.map((f, i) => (
+                    <button key={i} onClick={() => pick(f)}
+                      style={{ background: fn === f.n ? theme.accentSoft : theme.bg, border: `1px solid ${fn === f.n ? theme.accent : theme.border}`, borderRadius: 10, padding: "6px 12px", color: fn === f.n ? theme.accent : theme.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+                      {f.n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+            return (<>
+              {renderGroup(solids, "🍽 Solids")}
+              {renderGroup(liquids, "🥛 Liquids (per oz)")}
+            </>);
+          })()}
+        </div>
       )}
       <input placeholder="Food name" value={fn} onChange={e => setFn(e.target.value)} style={{ ...is, fontSize: 16, fontWeight: 700, marginBottom: 8 }} />
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}><input placeholder="Serving" value={ss} onChange={e => setSs(e.target.value)} style={{ ...is, flex: 1 }} /><input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...is, flex: 1 }} /></div>
@@ -1920,7 +1952,15 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
       </div>
     </div>
     <AIProviderSection theme={theme} s={s} us={us} inputStyle={inputStyle} userThemeKey={userThemeKey} setThemePref={setThemePref} />
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{[{p:"growth",i:"📏",l:"Growth"},{p:"activities",i:"🎯",l:"Activities"},{p:"pooplog",i:"💩",l:"Poop Log"},{p:"family",i:"👨‍👩‍👦",l:"Family"}].map(x => (<button key={x.p} className="log-btn" onClick={() => navigate(x.p)} style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, cursor: "pointer", textAlign: "center" }}><span style={{ fontSize: 22 }}>{x.i}</span><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{x.l}</div></button>))}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      {[{p:"growth",i:"📏",l:"Growth"},{p:"activities",i:"🎯",l:"Activities"},{p:"pooplog",i:"💩",l:"Poop Log"},{p:"family",i:"👨‍👩‍👦",l:"Family"}].map(x => (
+        <button key={x.p} className="log-btn" onClick={() => navigate(x.p)}
+          style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, cursor: "pointer", textAlign: "center", color: theme.text }}>
+          <span style={{ fontSize: 28, display: "block", marginBottom: 6 }}>{x.i}</span>
+          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>{x.l}</div>
+        </button>
+      ))}
+    </div>
     {currentUser && !currentUser.isAnonymous && (
       <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
         <SectionLabel theme={theme}>Partner Sync</SectionLabel>
