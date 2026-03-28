@@ -660,7 +660,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
         <SectionLabel theme={theme}>Today's Summary</SectionLabel>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
-          <SummaryBubble icon="🍼" value={`${totalOz}`} unit="oz" sub={timeSince || "none"} color={theme.info} theme={theme} />
+          <SummaryBubble icon="🍼" value={`${totalOz}`} unit="oz" sub={timeAgo(lastBottle) || "none"} color={theme.info} theme={theme} />
           <SummaryBubble icon="💩" value={`${poops.length}`} unit="poop" sub={`${wets.length} wet`} color={theme.warning} theme={theme} />
           <SummaryBubble icon="😴" value={`${sleeps.length}`} unit="naps" sub={data.sleepState ? "zzz" : "awake"} color={theme.purple} theme={theme} />
           <SummaryBubble icon="🍎" value={`${totalCals}`} unit="cal" sub={`${foods.length} items`} color={theme.success} theme={theme} />
