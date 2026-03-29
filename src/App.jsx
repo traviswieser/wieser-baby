@@ -590,7 +590,7 @@ function MacroBox({ label, value, unit, color, theme }) {
   return (<div style={{ background: theme.bg, borderRadius: 10, padding: "6px 8px" }}><div style={{ fontSize: 16, fontWeight: 900, color, fontFamily: "'Fredoka', sans-serif" }}>{value}<span style={{ fontSize: 10, fontWeight: 600 }}>{unit}</span></div><div style={{ fontSize: 9, color: theme.textMuted, fontWeight: 700, textTransform: "uppercase" }}>{label}</div></div>);
 }
 const inputStyle = (theme) => ({ background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 12, padding: "10px 12px", color: theme.text, fontSize: 14, width: "100%" });
-const logIcon = (type) => ({ bottle: "🍼", poop: "💩", diaper: "💧", sleep: "😴", medicine: "💊", food: "🍎", teething: "🦷" }[type] || "📝");
+const logIcon = (type) => ({ bottle: "🍼", poop: "💩", diaper: "🩲", sleep: "😴", medicine: "💊", food: "🍎", teething: "🦷", pump: "🤱", allergy: "🚨" }[type] || "📝");
 
 // ═══════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -673,9 +673,9 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <QuickLogButton icon="🍼" label="Bottle" sublabel={timeAgo(lastBottle) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<BottleModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
+        <QuickLogButton icon="🍼" label="Milk" sublabel={timeAgo(lastBottle) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<BottleModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (timeAgo(lastSleep) || "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
-        <QuickLogButton icon="💧" label="Diaper" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<DiaperModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} setModal={setModal} />)} />
+        <QuickLogButton icon="🩲" label="Diaper" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<DiaperModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} setModal={setModal} />)} />
         <QuickLogButton icon="🍎" label="Food" sublabel={timeAgo(lastFood) || "not yet today"} color={theme.success} theme={theme} onClick={() => setModal(<FoodLogModal theme={theme} addLog={addLog} data={data} updateData={updateData} todayStr={todayStr} now={now} showToast={showToast} />)} />
       </div>
 
@@ -713,14 +713,16 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
-        <QuickAction icon="💩" label="Poop" theme={theme} onClick={() => setModal(<PoopModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} includeWet />)} />
+        <QuickAction icon="📅" label="History" theme={theme} onClick={() => navigate("history")} />
         <QuickAction icon="💊" label="Meds" theme={theme} onClick={() => setModal(<MedicineModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="📝" label="Note" theme={theme} onClick={() => setModal(<NoteModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="🦷" label="Teeth" theme={theme} onClick={() => setModal(<TeethingModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
-        <QuickAction icon="📅" label="History" theme={theme} onClick={() => navigate("history")} />
+        <QuickAction icon="🤱" label="Pump" theme={theme} onClick={() => setModal(<PumpingModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickAction icon="📏" label="Growth" theme={theme} onClick={() => navigate("growth")} />
         <QuickAction icon="🩺" label="Doctor" theme={theme} onClick={() => setModal(<DoctorModal theme={theme} data={data} updateData={updateData} showToast={showToast} />)} />
         <QuickAction icon="💩" label="Poop Log" theme={theme} onClick={() => navigate("pooplog")} />
+        <QuickAction icon="🚨" label="Allergy" theme={theme} onClick={() => setModal(<AllergyModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
+        <QuickAction icon="🎵" label="Sounds" theme={theme} onClick={() => setModal(<SleepSoundsModal theme={theme} />)} />
       </div>
 
       {/* Poop health alert */}
@@ -1515,6 +1517,315 @@ function SleepEndModal({ theme, now, sleepState, todayStr, onEnd, onClose }) {
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// PUMPING MODAL
+// ═══════════════════════════════════════════════════════════════
+function PumpingModal({ theme, addLog, todayStr, now }) {
+  const [amt, setAmt]   = useState(2);
+  const [side, setSide] = useState("both");
+  const [time, setTime] = useState(localTimeStr(now));
+  const [notes, setNotes] = useState("");
+  const step = 0.5;
+  const dec = () => setAmt(a => Math.max(0.5, Math.round((a - step) * 10) / 10));
+  const inc = () => setAmt(a => Math.round((a + step) * 10) / 10);
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🤱 Log Pumping</h2>
+
+      <SectionLabel theme={theme}>Side</SectionLabel>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {[["left","Left 🤱"],["right","Right 🤱"],["both","Both 🤱"]].map(([v, l]) => (
+          <button key={v} onClick={() => setSide(v)}
+            style={{ flex: 1, padding: "12px 8px", borderRadius: 14, textAlign: "center",
+              background: side === v ? theme.accentSoft : theme.bg,
+              border: `2px solid ${side === v ? theme.accent : theme.border}`,
+              color: side === v ? theme.accent : theme.textMuted,
+              fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <SectionLabel theme={theme}>Amount pumped</SectionLabel>
+      <div style={{ display: "flex", alignItems: "center", gap: 0, background: theme.bg, borderRadius: 18, border: `1px solid ${theme.border}`, overflow: "hidden", marginBottom: 16 }}>
+        <button onClick={dec} style={{ width: 60, height: 60, fontSize: 28, background: "none", border: "none", color: theme.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+        <div style={{ flex: 1, textAlign: "center", fontSize: 32, fontWeight: 900, color: theme.text, fontFamily: "'Fredoka', sans-serif" }}>
+          {amt} <span style={{ fontSize: 16, fontWeight: 600, color: theme.textMuted }}>oz</span>
+        </div>
+        <button onClick={inc} style={{ width: 60, height: 60, fontSize: 28, background: "none", border: "none", color: theme.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
+        <input placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} style={{ ...inputStyle(theme), flex: 2 }} />
+      </div>
+
+      <button onClick={() => addLog({ type: "pump", amount: amt, side, notes, date: todayStr, time })}
+        style={{ width: "100%", padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
+        🤱 Log {amt} oz
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ALLERGY REACTION MODAL
+// ═══════════════════════════════════════════════════════════════
+function AllergyModal({ theme, addLog, todayStr, now }) {
+  const [food, setFood]           = useState("");
+  const [level, setLevel]         = useState("mild");
+  const [symptoms, setSymptoms]   = useState("");
+  const [time, setTime]           = useState(localTimeStr(now));
+  const [photos, setPhotos]       = useState([]);
+
+  const LEVELS = [
+    { id: "mild",     label: "Mild",     emoji: "😟", desc: "Hives, slight redness", color: "#f6ae2d" },
+    { id: "moderate", label: "Moderate", emoji: "😰", desc: "Vomiting, swelling",    color: "#e76f51" },
+    { id: "severe",   label: "Severe",   emoji: "🚨", desc: "Breathing issues",      color: "#e57373" },
+  ];
+
+  const COMMON_FOODS = ["Peanuts","Tree Nuts","Milk","Eggs","Wheat","Soy","Fish","Shellfish","Sesame","Strawberries"];
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4, textAlign: "center" }}>🚨 Allergy Reaction</h2>
+      <p style={{ fontSize: 12, color: "#e57373", textAlign: "center", marginBottom: 16, lineHeight: 1.5 }}>
+        ⚠️ If your baby has trouble breathing, call 911 immediately.
+      </p>
+
+      <SectionLabel theme={theme}>Suspected food</SectionLabel>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+        {COMMON_FOODS.map(f => (
+          <button key={f} onClick={() => setFood(f)}
+            style={{ padding: "6px 12px", borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: "pointer",
+              background: food === f ? theme.accentSoft : theme.bg,
+              border: `1px solid ${food === f ? theme.accent : theme.border}`,
+              color: food === f ? theme.accent : theme.textMuted }}>
+            {f}
+          </button>
+        ))}
+      </div>
+      <input placeholder="Or type food name…" value={food} onChange={e => setFood(e.target.value)}
+        style={{ ...inputStyle(theme), marginBottom: 16 }} />
+
+      <SectionLabel theme={theme}>Reaction severity</SectionLabel>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {LEVELS.map(l => (
+          <button key={l.id} onClick={() => setLevel(l.id)}
+            style={{ flex: 1, padding: "12px 6px", borderRadius: 14, textAlign: "center",
+              background: level === l.id ? `${l.color}22` : theme.bg,
+              border: `2px solid ${level === l.id ? l.color : theme.border}`,
+              cursor: "pointer" }}>
+            <div style={{ fontSize: 22 }}>{l.emoji}</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: level === l.id ? l.color : theme.textMuted, marginTop: 2 }}>{l.label}</div>
+            <div style={{ fontSize: 10, color: theme.textMuted, lineHeight: 1.3, marginTop: 2 }}>{l.desc}</div>
+          </button>
+        ))}
+      </div>
+
+      <SectionLabel theme={theme}>Symptoms</SectionLabel>
+      <textarea placeholder="Describe what happened (hives on arms, eyes puffy, vomited once...)" value={symptoms}
+        onChange={e => setSymptoms(e.target.value)} rows={3}
+        style={{ ...inputStyle(theme), resize: "none", marginBottom: 12 }} />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
+      </div>
+
+      <SectionLabel theme={theme}>Photos (optional)</SectionLabel>
+      <div style={{ marginBottom: 16 }}>
+        <DocUploadButton theme={theme} onFilesReady={files => setPhotos(p => [...p, ...files])} />
+        {photos.length > 0 && <DocGallery docs={photos} theme={theme} onDelete={i => setPhotos(p => p.filter((_, j) => j !== i))} />}
+      </div>
+
+      <button
+        onClick={() => food && addLog({ type: "allergy", food, reactionLevel: level, symptoms, photos, date: todayStr, time })}
+        disabled={!food}
+        style={{ width: "100%", padding: 16, borderRadius: 16, background: food ? "#e57373" : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: food ? "pointer" : "default" }}>
+        🚨 Log Reaction
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SLEEP SOUNDS MODAL — Web Audio white noise / nature sounds
+// ═══════════════════════════════════════════════════════════════
+function SleepSoundsModal({ theme }) {
+  const [sound, setSound]       = useState("white");
+  const [playing, setPlaying]   = useState(false);
+  const [timerMins, setTimerMins] = useState(0); // 0 = play forever
+  const [elapsed, setElapsed]   = useState(0);   // seconds
+  const ctxRef    = useRef(null);
+  const sourceRef = useRef(null);
+  const gainRef   = useRef(null);
+  const timerRef  = useRef(null);
+  const startRef  = useRef(null);
+
+  const SOUNDS = [
+    { id: "white",     label: "White Noise",  emoji: "🌫️" },
+    { id: "pink",      label: "Pink Noise",   emoji: "🌸" },
+    { id: "rain",      label: "Rain",         emoji: "🌧️" },
+    { id: "ocean",     label: "Ocean",        emoji: "🌊" },
+    { id: "fan",       label: "Fan",          emoji: "🌀" },
+    { id: "heartbeat", label: "Heartbeat",    emoji: "💓" },
+  ];
+
+  const TIMERS = [
+    { mins: 0,  label: "∞" },
+    { mins: 5,  label: "5m" },
+    { mins: 10, label: "10m" },
+    { mins: 20, label: "20m" },
+    { mins: 30, label: "30m" },
+    { mins: 60, label: "1h" },
+  ];
+
+  const createBuffer = (ctx, soundId) => {
+    const sr = ctx.sampleRate;
+    const dur = soundId === "heartbeat" ? 1.5 : 4;
+    const buf = ctx.createBuffer(1, sr * dur, sr);
+    const data = buf.getChannelData(0);
+
+    if (soundId === "white") {
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    } else if (soundId === "pink") {
+      let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+      for (let i = 0; i < data.length; i++) {
+        const w = Math.random() * 2 - 1;
+        b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+        b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+        b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+        data[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+      }
+    } else if (soundId === "rain") {
+      for (let i = 0; i < data.length; i++) {
+        const n = Math.random() * 2 - 1;
+        data[i] = n * (0.3 + 0.4 * Math.random()) * (Math.random() < 0.95 ? 0.2 : 0.8);
+      }
+    } else if (soundId === "ocean") {
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sr;
+        const wave = Math.sin(2 * Math.PI * 0.15 * t) * Math.sin(2 * Math.PI * 0.08 * t);
+        data[i] = (Math.random() * 2 - 1) * 0.15 + wave * 0.4;
+      }
+    } else if (soundId === "fan") {
+      let b = 0;
+      for (let i = 0; i < data.length; i++) {
+        const w = Math.random() * 2 - 1;
+        b = b * 0.998 + w * 0.002;
+        data[i] = (b + w * 0.05) * 0.6;
+      }
+    } else if (soundId === "heartbeat") {
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sr;
+        const beat1 = t > 0.1 && t < 0.25 ? Math.sin(Math.PI * (t - 0.1) / 0.075) * Math.exp(-12 * (t - 0.1)) : 0;
+        const beat2 = t > 0.4 && t < 0.55 ? Math.sin(Math.PI * (t - 0.4) / 0.075) * Math.exp(-15 * (t - 0.4)) * 0.6 : 0;
+        data[i] = (beat1 + beat2) * 0.9;
+      }
+    }
+    return buf;
+  };
+
+  const startSound = () => {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = 0.6;
+    gainNode.connect(ctx.destination);
+
+    const buf = createBuffer(ctx, sound);
+    const source = ctx.createBufferSource();
+    source.buffer = buf;
+    source.loop = true;
+    source.connect(gainNode);
+    source.start();
+
+    ctxRef.current = ctx;
+    sourceRef.current = source;
+    gainRef.current = gainNode;
+    startRef.current = Date.now();
+    setPlaying(true);
+    setElapsed(0);
+
+    timerRef.current = setInterval(() => {
+      const secs = Math.floor((Date.now() - startRef.current) / 1000);
+      setElapsed(secs);
+      if (timerMins > 0 && secs >= timerMins * 60) stopSound();
+    }, 1000);
+  };
+
+  const stopSound = () => {
+    try { sourceRef.current?.stop(); } catch {}
+    try { ctxRef.current?.close(); } catch {}
+    clearInterval(timerRef.current);
+    setPlaying(false);
+    setElapsed(0);
+  };
+
+  useEffect(() => () => stopSound(), []);
+
+  const remaining = timerMins > 0 ? Math.max(0, timerMins * 60 - elapsed) : null;
+  const fmtTime = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4, textAlign: "center" }}>🎵 Sleep Sounds</h2>
+      <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 20 }}>Keep app open to play</p>
+
+      {/* Sound selector */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+        {SOUNDS.map(s => (
+          <button key={s.id} onClick={() => { if (playing) stopSound(); setSound(s.id); }}
+            style={{ padding: "12px 8px", borderRadius: 14, textAlign: "center",
+              background: sound === s.id ? theme.accentSoft : theme.bg,
+              border: `2px solid ${sound === s.id ? theme.accent : theme.border}`,
+              cursor: "pointer" }}>
+            <div style={{ fontSize: 24 }}>{s.emoji}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: sound === s.id ? theme.accent : theme.textMuted, marginTop: 4 }}>{s.label}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Timer selector */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
+        {TIMERS.map(t => (
+          <button key={t.mins} onClick={() => setTimerMins(t.mins)}
+            style={{ flex: 1, padding: "8px 4px", borderRadius: 10, textAlign: "center", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              background: timerMins === t.mins ? theme.accentSoft : theme.bg,
+              border: `1px solid ${timerMins === t.mins ? theme.accent : theme.border}`,
+              color: timerMins === t.mins ? theme.accent : theme.textMuted }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Play/Stop */}
+      <button onClick={playing ? stopSound : startSound}
+        style={{ width: "100%", padding: 18, borderRadius: 20, fontSize: 18, fontWeight: 900, border: "none", cursor: "pointer",
+          background: playing ? theme.border : `linear-gradient(135deg, ${theme.accent}, ${theme.purple})`,
+          color: playing ? theme.text : "#fff" }}>
+        {playing ? "⏹ Stop" : "▶ Play"}
+      </button>
+
+      {playing && (
+        <div style={{ textAlign: "center", marginTop: 14 }}>
+          <div style={{ fontSize: 28, animation: "pulse 1.5s ease-in-out infinite" }}>
+            {SOUNDS.find(s => s.id === sound)?.emoji}
+          </div>
+          <p style={{ fontSize: 13, color: theme.accent, fontWeight: 700, marginTop: 4 }}>
+            {SOUNDS.find(s => s.id === sound)?.label} playing…
+          </p>
+          {remaining !== null
+            ? <p style={{ fontSize: 12, color: theme.textMuted }}>Stops in {fmtTime(remaining)}</p>
+            : <p style={{ fontSize: 12, color: theme.textMuted }}>Playing until stopped · {fmtTime(elapsed)}</p>
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BottleModal({ theme, addLog, todayStr, now }) {
   const [amt, setAmt] = useState(4); const [ft, setFt] = useState("formula"); const [time, setTime] = useState(localTimeStr(now));
   const step = 0.5;
@@ -1522,7 +1833,7 @@ function BottleModal({ theme, addLog, todayStr, now }) {
   const inc = () => setAmt(a => Math.round((a + step) * 10) / 10);
   return (
     <div>
-      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🍼 Log Bottle</h2>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🍼 Log Milk</h2>
       {/* Feed type */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, justifyContent: "center", flexWrap: "wrap" }}>
         {["formula","breast","milk","water","juice"].map(t => (
@@ -1551,7 +1862,7 @@ function BottleModal({ theme, addLog, todayStr, now }) {
         addLog({ type: "bottle", amount: amt, feedType: ft, date: todayStr, time, ...nutr });
         addLog({ type: "food", foodName: `${displayName} (bottle)`, servingSize: `${amt} oz`, date: todayStr, time, source: "bottle", ...nutr });
       }} style={{ width: "100%", padding: 16, borderRadius: 16, background: theme.accent, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: "pointer" }}>
-        Log {amt} oz {ft}
+        Log {amt} oz {ft === "breast" ? "breast milk" : ft}
       </button>
     </div>
   );
@@ -1853,16 +2164,281 @@ function MilestonesPage({ data, updateData, theme, showToast }) {
   );
 }
 
+
+// ─── WHO Child Growth Standards (simplified, 3rd/50th/97th percentile) ────────
+// Weight in lbs, Length/Height in inches, Age in months
+const WHO_WEIGHT = {
+  boy: [
+    {m:0,  p3:5.8,  p50:7.7,  p97:9.9},
+    {m:1,  p3:7.7,  p50:9.9,  p97:12.4},
+    {m:2,  p3:9.2,  p50:11.8, p97:14.7},
+    {m:3,  p3:10.6, p50:13.3, p97:16.5},
+    {m:4,  p3:11.7, p50:14.5, p97:17.9},
+    {m:6,  p3:13.3, p50:16.4, p97:20.0},
+    {m:9,  p3:15.2, p50:18.8, p97:22.8},
+    {m:12, p3:17.0, p50:21.2, p97:25.8},
+    {m:18, p3:20.1, p50:24.9, p97:30.5},
+    {m:24, p3:22.5, p50:28.0, p97:34.5},
+    {m:36, p3:26.2, p50:32.6, p97:40.8},
+    {m:48, p3:29.3, p50:37.0, p97:46.6},
+    {m:60, p3:32.0, p50:40.8, p97:52.1},
+  ],
+  girl: [
+    {m:0,  p3:5.5,  p50:7.3,  p97:9.5},
+    {m:1,  p3:7.1,  p50:9.2,  p97:11.8},
+    {m:2,  p3:8.6,  p50:10.8, p97:13.8},
+    {m:3,  p3:9.9,  p50:12.3, p97:15.9},
+    {m:4,  p3:11.0, p50:13.5, p97:17.4},
+    {m:6,  p3:12.7, p50:15.4, p97:19.6},
+    {m:9,  p3:14.8, p50:18.0, p97:22.9},
+    {m:12, p3:16.5, p50:20.6, p97:26.7},
+    {m:18, p3:19.4, p50:24.2, p97:31.5},
+    {m:24, p3:22.0, p50:27.5, p97:36.3},
+    {m:36, p3:25.6, p50:32.0, p97:43.4},
+    {m:48, p3:28.7, p50:36.6, p97:50.5},
+    {m:60, p3:31.7, p50:40.8, p97:57.3},
+  ],
+};
+const WHO_HEIGHT = {
+  boy: [
+    {m:0,  p3:18.1, p50:19.7, p97:21.0},
+    {m:1,  p3:19.9, p50:21.4, p97:22.8},
+    {m:2,  p3:21.1, p50:22.8, p97:24.2},
+    {m:3,  p3:22.3, p50:24.0, p97:25.5},
+    {m:4,  p3:23.3, p50:25.1, p97:26.6},
+    {m:6,  p3:24.8, p50:26.7, p97:28.3},
+    {m:9,  p3:26.8, p50:28.7, p97:30.4},
+    {m:12, p3:28.3, p50:30.3, p97:32.2},
+    {m:18, p3:30.6, p50:32.8, p97:34.9},
+    {m:24, p3:32.5, p50:34.6, p97:36.6},
+    {m:36, p3:35.5, p50:37.7, p97:39.9},
+    {m:48, p3:37.9, p50:40.4, p97:42.9},
+    {m:60, p3:40.2, p50:42.8, p97:45.5},
+  ],
+  girl: [
+    {m:0,  p3:17.9, p50:19.4, p97:20.9},
+    {m:1,  p3:19.5, p50:21.0, p97:22.5},
+    {m:2,  p3:20.8, p50:22.4, p97:23.9},
+    {m:3,  p3:22.0, p50:23.7, p97:25.3},
+    {m:4,  p3:23.0, p50:24.7, p97:26.3},
+    {m:6,  p3:24.4, p50:26.2, p97:28.0},
+    {m:9,  p3:26.3, p50:28.2, p97:30.2},
+    {m:12, p3:27.8, p50:29.8, p97:31.9},
+    {m:18, p3:30.2, p50:32.4, p97:34.6},
+    {m:24, p3:32.0, p50:34.3, p97:36.6},
+    {m:36, p3:34.9, p50:37.3, p97:39.6},
+    {m:48, p3:37.4, p50:40.0, p97:42.6},
+    {m:60, p3:39.7, p50:42.5, p97:45.3},
+  ],
+};
+
+// Linear interpolation of WHO reference for a given age in months
+function whoAt(table, sex, ageMonths) {
+  const rows = table[sex] || table.boy;
+  if (ageMonths <= rows[0].m) return rows[0];
+  if (ageMonths >= rows[rows.length-1].m) return rows[rows.length-1];
+  let lo = rows[0], hi = rows[1];
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].m >= ageMonths) { lo = rows[i-1]; hi = rows[i]; break; }
+  }
+  const t = (ageMonths - lo.m) / (hi.m - lo.m);
+  return {
+    p3:  lo.p3  + t * (hi.p3  - lo.p3),
+    p50: lo.p50 + t * (hi.p50 - lo.p50),
+    p97: lo.p97 + t * (hi.p97 - lo.p97),
+  };
+}
+
+// Estimate baby's percentile (simple linear interpolation between p3 and p97)
+function estimatePercentile(val, ref) {
+  if (val <= ref.p3)  return "< 3rd";
+  if (val >= ref.p97) return "> 97th";
+  if (val <= ref.p50) return `${Math.round(3 + (val - ref.p3) / (ref.p50 - ref.p3) * 47)}th`;
+  return `${Math.round(50 + (val - ref.p50) / (ref.p97 - ref.p50) * 47)}th`;
+}
+
 function GrowthPage({ data, updateData, theme, showToast, navigateBack }) {
-  const [sf, setSf] = useState(false); const [w, setW] = useState(""); const [h, setH] = useState(""); const [hd, setHd] = useState(""); const [d, setD] = useState(localDateStr());
+  const [sf, setSf]   = useState(false);
+  const [w, setW]     = useState("");
+  const [h, setH]     = useState("");
+  const [hd, setHd]   = useState("");
+  const [d, setD]     = useState(localDateStr());
+  const [chartTab, setChartTab] = useState("weight"); // "weight" | "height" | "percentile"
+
   const recs = (data.growthRecords || []).sort((a, b) => a.date.localeCompare(b.date));
-  const add = () => { if (!w && !h && !hd) return; updateData("growthRecords", [...(data.growthRecords || []), { id: uid(), date: d, weight: w ? parseFloat(w) : null, height: h ? parseFloat(h) : null, head: hd ? parseFloat(hd) : null }]); setW(""); setH(""); setHd(""); setSf(false); showToast("📏 Saved!"); };
-  const cd = recs.map(r => ({ date: r.date.slice(5), weight: r.weight }));
+  const sex  = data.baby?.sex || data.babies?.[0]?.sex || "boy";
+
+  const add = () => {
+    if (!w && !h && !hd) return;
+    updateData("growthRecords", [...(data.growthRecords || []), { id: uid(), date: d, weight: w ? parseFloat(w) : null, height: h ? parseFloat(h) : null, head: hd ? parseFloat(hd) : null }]);
+    setW(""); setH(""); setHd(""); setSf(false); showToast("📏 Saved!");
+  };
+
+  // Baby age in months from birthDate
+  const birthDate = data.baby?.birthDate || data.babies?.[0]?.birthDate;
+  const ageMonthsAt = (dateStr) => {
+    if (!birthDate || !dateStr) return null;
+    const ms = new Date(dateStr) - new Date(birthDate);
+    return Math.max(0, ms / (1000 * 60 * 60 * 24 * 30.44));
+  };
+
+  // Build chart data with WHO reference lines
+  const buildChartData = (metric, whoTable) => {
+    // WHO reference curve from 0 to max baby age
+    const maxAge = birthDate ? Math.min(60, Math.ceil((new Date() - new Date(birthDate)) / (1000*60*60*24*30.44)) + 3) : 24;
+    const steps = [0,1,2,3,4,6,9,12,15,18,21,24,30,36,42,48,54,60].filter(m => m <= maxAge + 1);
+    const refLine = steps.map(m => {
+      const ref = whoAt(whoTable, sex, m);
+      return { ageM: m, p3: +ref.p3.toFixed(1), p50: +ref.p50.toFixed(1), p97: +ref.p97.toFixed(1) };
+    });
+    // Baby's actual data points
+    const babyPoints = recs.filter(r => r[metric]).map(r => {
+      const am = ageMonthsAt(r.date);
+      return am !== null ? { ageM: +am.toFixed(1), baby: r[metric] } : null;
+    }).filter(Boolean);
+    // Merge: for each ref point, add baby measurement if within 0.5m
+    return refLine.map(row => {
+      const bp = babyPoints.find(b => Math.abs(b.ageM - row.ageM) < 0.75);
+      return { ...row, baby: bp?.baby || null };
+    });
+  };
+
+  const weightData = buildChartData("weight", WHO_WEIGHT);
+  const heightData = buildChartData("height", WHO_HEIGHT);
+
+  // Latest measurement percentile
+  const latestRec  = recs.length > 0 ? recs[recs.length - 1] : null;
+  const latestAgeM = latestRec ? ageMonthsAt(latestRec.date) : null;
+  const latestWRef = latestAgeM != null ? whoAt(WHO_WEIGHT, sex, latestAgeM) : null;
+  const latestHRef = latestAgeM != null ? whoAt(WHO_HEIGHT, sex, latestAgeM) : null;
+  const wPct = latestRec?.weight && latestWRef ? estimatePercentile(latestRec.weight, latestWRef) : null;
+  const hPct = latestRec?.height && latestHRef ? estimatePercentile(latestRec.height, latestHRef) : null;
+
+  const chartStyle = { background: theme.card, borderRadius: 20, padding: "16px 4px 8px 0", border: `1px solid ${theme.border}`, marginBottom: 16 };
+  const tooltipStyle = { contentStyle: { background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, color: theme.text, fontSize: 12 } };
+
   return (<div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}><div style={{ display: "flex", alignItems: "center", gap: 12 }}><button onClick={navigateBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: theme.text }}>←</button><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>📏 Growth</h2></div><button onClick={() => setSf(!sf)} style={{ background: theme.accent, color: "#fff", border: "none", borderRadius: 12, padding: "8px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{sf ? "Cancel" : "+ Add"}</button></div>
-    {sf && <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, marginBottom: 16, animation: "fadeIn 0.2s" }}><input type="date" value={d} onChange={e => setD(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 10 }} /><div style={{ display: "flex", gap: 8, marginBottom: 12 }}><input placeholder="Weight lbs" type="number" step="0.1" value={w} onChange={e => setW(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /><input placeholder="Height in" type="number" step="0.1" value={h} onChange={e => setH(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /><input placeholder="Head in" type="number" step="0.1" value={hd} onChange={e => setHd(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} /></div><button onClick={add} style={{ width: "100%", padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, border: "none", cursor: "pointer" }}>Save</button></div>}
-    {cd.length > 1 && <div style={{ background: theme.card, borderRadius: 20, padding: "16px 8px 8px 0", border: `1px solid ${theme.border}`, marginBottom: 16 }}><ResponsiveContainer width="100%" height={160}><LineChart data={cd}><CartesianGrid strokeDasharray="3 3" stroke={theme.border} /><XAxis dataKey="date" tick={{ fill: theme.textMuted, fontSize: 10 }} axisLine={false} /><YAxis tick={{ fill: theme.textMuted, fontSize: 11 }} axisLine={false} width={35} /><Tooltip contentStyle={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, color: theme.text }} /><Line type="monotone" dataKey="weight" stroke={theme.accent} strokeWidth={3} dot={{ fill: theme.accent, r: 4 }} /></LineChart></ResponsiveContainer></div>}
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{[...recs].reverse().map(r => (<div key={r.id} className="card" style={{ background: theme.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 13, fontWeight: 700 }}>{r.date}</span><div style={{ display: "flex", gap: 16, fontSize: 13 }}>{r.weight && <span style={{ color: theme.accent }}>{r.weight} lbs</span>}{r.height && <span style={{ color: theme.info }}>{r.height} in</span>}{r.head && <span style={{ color: theme.purple }}>{r.head} in</span>}{r.source === "doctor" && <span>🩺</span>}</div></div>))}{recs.length === 0 && <p style={{ color: theme.textMuted, fontSize: 14, textAlign: "center", padding: 30 }}>No records yet.</p>}</div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button onClick={navigateBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: theme.text }}>←</button>
+        <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>📏 Growth</h2>
+      </div>
+      <button onClick={() => setSf(!sf)} style={{ background: theme.accent, color: "#fff", border: "none", borderRadius: 12, padding: "8px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{sf ? "Cancel" : "+ Add"}</button>
+    </div>
+
+    {sf && (
+      <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}`, marginBottom: 16, animation: "fadeIn 0.2s" }}>
+        <input type="date" value={d} onChange={e => setD(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 10 }} />
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input placeholder="Weight lbs" type="number" step="0.1" value={w} onChange={e => setW(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
+          <input placeholder="Height in" type="number" step="0.1" value={h} onChange={e => setH(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
+          <input placeholder="Head in" type="number" step="0.1" value={hd} onChange={e => setHd(e.target.value)} style={{ ...inputStyle(theme), flex: 1 }} />
+        </div>
+        <button onClick={add} style={{ width: "100%", padding: 14, borderRadius: 14, background: theme.accent, color: "#fff", fontWeight: 800, border: "none", cursor: "pointer" }}>Save</button>
+      </div>
+    )}
+
+    {/* Latest percentile summary */}
+    {(wPct || hPct) && birthDate && (
+      <div style={{ background: theme.card, borderRadius: 16, padding: "14px 16px", border: `1px solid ${theme.border}`, marginBottom: 16, display: "flex", gap: 16 }}>
+        {wPct && <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: theme.accent, fontFamily: "'Fredoka'" }}>{wPct}</div>
+          <div style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>WEIGHT PERCENTILE</div>
+        </div>}
+        {hPct && <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: theme.info, fontFamily: "'Fredoka'" }}>{hPct}</div>
+          <div style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>HEIGHT PERCENTILE</div>
+        </div>}
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: theme.textMuted, marginBottom: 2 }}>WHO {sex === "girl" ? "Girls" : "Boys"}</div>
+          <div style={{ fontSize: 10, color: theme.textMuted }}>3rd–97th percentile</div>
+        </div>
+      </div>
+    )}
+
+    {recs.length > 0 && (
+      <>
+        {/* Chart tabs */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {[{id:"weight",l:"Weight"},{id:"height",l:"Height"},{id:"records",l:"Records"}].map(t => (
+            <button key={t.id} onClick={() => setChartTab(t.id)}
+              style={{ flex: 1, padding: "8px 4px", borderRadius: 12, fontWeight: 700, fontSize: 12, cursor: "pointer",
+                background: chartTab === t.id ? theme.accentSoft : theme.card,
+                border: `1px solid ${chartTab === t.id ? theme.accent : theme.border}`,
+                color: chartTab === t.id ? theme.accent : theme.textMuted }}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        {chartTab === "weight" && birthDate && (
+          <div style={chartStyle}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: theme.textMuted, textTransform: "uppercase", paddingLeft: 16, marginBottom: 4 }}>
+              Weight (lbs) vs WHO Percentiles
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={weightData} margin={{ left: 0, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.border} />
+                <XAxis dataKey="ageM" tick={{ fill: theme.textMuted, fontSize: 10 }} axisLine={false} label={{ value: "Age (months)", position: "insideBottom", offset: -2, fill: theme.textMuted, fontSize: 10 }} />
+                <YAxis tick={{ fill: theme.textMuted, fontSize: 10 }} axisLine={false} width={32} />
+                <Tooltip {...tooltipStyle} formatter={(v, n) => [v ? `${v} lbs` : "—", n === "baby" ? "Baby" : n === "p50" ? "50th %ile" : n === "p3" ? "3rd %ile" : "97th %ile"]} labelFormatter={v => `${Math.round(v)} months`} />
+                <Line type="monotone" dataKey="p97" stroke={theme.border} strokeWidth={1} dot={false} strokeDasharray="4 4" name="p97" />
+                <Line type="monotone" dataKey="p50" stroke={theme.accent} strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="p50" opacity={0.6} />
+                <Line type="monotone" dataKey="p3"  stroke={theme.border} strokeWidth={1} dot={false} strokeDasharray="4 4" name="p3" />
+                <Line type="monotone" dataKey="baby" stroke={theme.info} strokeWidth={3} dot={{ fill: theme.info, r: 5 }} connectNulls={false} name="baby" />
+              </LineChart>
+            </ResponsiveContainer>
+            <div style={{ display: "flex", gap: 16, paddingLeft: 16, marginTop: 4 }}>
+              <span style={{ fontSize: 10, color: theme.textMuted }}>━ 50th %ile (median)</span>
+              <span style={{ fontSize: 10, color: theme.info, fontWeight: 700 }}>━ Baby</span>
+            </div>
+          </div>
+        )}
+
+        {chartTab === "height" && birthDate && (
+          <div style={chartStyle}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: theme.textMuted, textTransform: "uppercase", paddingLeft: 16, marginBottom: 4 }}>
+              Height (in) vs WHO Percentiles
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={heightData} margin={{ left: 0, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.border} />
+                <XAxis dataKey="ageM" tick={{ fill: theme.textMuted, fontSize: 10 }} axisLine={false} label={{ value: "Age (months)", position: "insideBottom", offset: -2, fill: theme.textMuted, fontSize: 10 }} />
+                <YAxis tick={{ fill: theme.textMuted, fontSize: 10 }} axisLine={false} width={32} />
+                <Tooltip {...tooltipStyle} formatter={(v, n) => [v ? `${v} in` : "—", n === "baby" ? "Baby" : n === "p50" ? "50th %ile" : n === "p3" ? "3rd %ile" : "97th %ile"]} labelFormatter={v => `${Math.round(v)} months`} />
+                <Line type="monotone" dataKey="p97" stroke={theme.border} strokeWidth={1} dot={false} strokeDasharray="4 4" name="p97" />
+                <Line type="monotone" dataKey="p50" stroke={theme.accent} strokeWidth={1.5} dot={false} strokeDasharray="5 3" name="p50" opacity={0.6} />
+                <Line type="monotone" dataKey="p3"  stroke={theme.border} strokeWidth={1} dot={false} strokeDasharray="4 4" name="p3" />
+                <Line type="monotone" dataKey="baby" stroke={theme.purple} strokeWidth={3} dot={{ fill: theme.purple, r: 5 }} connectNulls={false} name="baby" />
+              </LineChart>
+            </ResponsiveContainer>
+            <div style={{ display: "flex", gap: 16, paddingLeft: 16, marginTop: 4 }}>
+              <span style={{ fontSize: 10, color: theme.textMuted }}>━ 50th %ile (median)</span>
+              <span style={{ fontSize: 10, color: theme.purple, fontWeight: 700 }}>━ Baby</span>
+            </div>
+          </div>
+        )}
+
+        {(chartTab === "records" || !birthDate) && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[...recs].reverse().map(r => (
+              <div key={r.id} className="card" style={{ background: theme.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{r.date}</span>
+                <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+                  {r.weight && <span style={{ color: theme.accent }}>{r.weight} lbs</span>}
+                  {r.height && <span style={{ color: theme.info }}>{r.height} in</span>}
+                  {r.head && <span style={{ color: theme.purple }}>{r.head} in</span>}
+                  {r.source === "doctor" && <span>🩺</span>}
+                </div>
+              </div>
+            ))}
+            {recs.length === 0 && <p style={{ color: theme.textMuted, fontSize: 14, textAlign: "center", padding: 30 }}>No records yet.</p>}
+          </div>
+        )}
+      </>
+    )}
+    {recs.length === 0 && <p style={{ color: theme.textMuted, fontSize: 14, textAlign: "center", padding: 30 }}>No records yet. Tap + Add to get started.</p>}
+
 
     {(data.pediatricianNotes || []).length > 0 && (
       <div style={{ marginTop: 20 }}>
@@ -1949,7 +2525,7 @@ function CoPilotPage({ data, theme, updateData, showToast, todayStr }) {
     <div>
       <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 16 }}>🤖 Baby Co-Pilot</h2>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {[{id:"digest",l:"Today"},{id:"insights",l:"Insights"},{id:"history",l:"All Digests"}].map(t => (
+        {[{id:"digest",l:"Today"},{id:"alerts",l:"🔔 Alerts"},{id:"insights",l:"Insights"},{id:"history",l:"All Digests"}].map(t => (
           <button key={t.id} className="tab-btn" onClick={() => setTab(t.id)}
             style={{ background: tab === t.id ? theme.accentSoft : theme.card, border: `1px solid ${tab === t.id ? theme.accent : theme.border}`, borderRadius: 14, padding: "8px 14px", color: tab === t.id ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 12 }}>
             {t.l}
@@ -2025,6 +2601,95 @@ function CoPilotPage({ data, theme, updateData, showToast, todayStr }) {
           </div>
         </div>
       )}
+
+      {tab === "alerts" && (() => {
+        // Calculate pattern alerts by comparing last 7 days vs prior 7 days
+        const now7 = last7Days();
+        const prior7 = Array.from({length: 7}, (_, i) => {
+          const d = new Date(); d.setDate(d.getDate() - 7 - i); return localDateStr(d);
+        });
+        const recentLogs = data.logs.filter(l => now7.includes(l.date));
+        const priorLogs  = data.logs.filter(l => prior7.includes(l.date));
+
+        const avg = (logs, fn) => {
+          const sum = logs.reduce((s, l) => s + (fn(l) || 0), 0);
+          return sum / 7;
+        };
+
+        const alerts = [];
+
+        // Wet diapers per day
+        const wetNow   = recentLogs.filter(l => l.type === "diaper").length / 7;
+        const wetPrior = priorLogs.filter(l  => l.type === "diaper").length / 7;
+        if (wetPrior > 2 && wetNow < wetPrior * 0.65) {
+          alerts.push({ icon: "💧", title: "Fewer wet diapers", color: "#4fc3f7",
+            msg: `Only ${wetNow.toFixed(1)}/day this week vs ${wetPrior.toFixed(1)}/day last week. This can indicate dehydration — watch feeding and offer extra fluids.` });
+        }
+
+        // Sleep hours per day
+        const sleepNow   = recentLogs.filter(l => l.type === "sleep" && l.subtype === "woke_up").reduce((s,l) => s + (l.durationMins||0), 0) / 7 / 60;
+        const sleepPrior = priorLogs.filter(l  => l.type === "sleep" && l.subtype === "woke_up").reduce((s,l) => s + (l.durationMins||0), 0) / 7 / 60;
+        if (sleepPrior > 1 && sleepNow < sleepPrior * 0.7) {
+          alerts.push({ icon: "😴", title: "Sleep has dropped", color: "#b39ddb",
+            msg: `${sleepNow.toFixed(1)} hrs/day this week vs ${sleepPrior.toFixed(1)} hrs/day last week — a ${Math.round((1 - sleepNow/sleepPrior)*100)}% decrease. Could be a sleep regression, teething, or illness.` });
+        }
+        if (sleepPrior > 1 && sleepNow > sleepPrior * 1.4) {
+          alerts.push({ icon: "😴", title: "Sleeping more than usual", color: "#b39ddb",
+            msg: `${sleepNow.toFixed(1)} hrs/day vs ${sleepPrior.toFixed(1)} last week. Extra sleep can be a sign of a growth spurt or an early illness coming on.` });
+        }
+
+        // Bottle/milk oz per day
+        const ozNow   = recentLogs.filter(l => l.type === "bottle").reduce((s,l) => s + (l.amount||0), 0) / 7;
+        const ozPrior = priorLogs.filter(l  => l.type === "bottle").reduce((s,l) => s + (l.amount||0), 0) / 7;
+        if (ozPrior > 4 && ozNow < ozPrior * 0.7) {
+          alerts.push({ icon: "🍼", title: "Milk intake dropped", color: "#4fc3f7",
+            msg: `${ozNow.toFixed(1)} oz/day this week vs ${ozPrior.toFixed(1)} oz/day last week. Watch for other symptoms — could be teething discomfort, illness, or a feeding strike.` });
+        }
+
+        // Poop frequency
+        const poopsNow   = recentLogs.filter(l => l.type === "poop").length / 7;
+        const poopsPrior = priorLogs.filter(l  => l.type === "poop").length / 7;
+        if (poopsPrior > 0.3 && poopsNow === 0 && recentLogs.length > 5) {
+          alerts.push({ icon: "💩", title: "No poops logged this week", color: "#f6ae2d",
+            msg: "Zero poops in 7 days is worth noting. Normal range varies by age, but if your baby seems uncomfortable or hasn't gone in 4+ days, contact your pediatrician." });
+        }
+
+        // Allergy reactions
+        const allergies = recentLogs.filter(l => l.type === "allergy");
+        if (allergies.length > 0) {
+          const severe = allergies.filter(a => a.reactionLevel === "severe");
+          if (severe.length > 0) {
+            alerts.push({ icon: "🚨", title: `${severe.length} severe reaction(s) logged`, color: "#e57373",
+              msg: `Severe reactions to: ${severe.map(a => a.food).join(", ")}. Please discuss with your pediatrician and consider allergy testing.` });
+          }
+        }
+
+        // Healthy streak notice
+        if (alerts.length === 0) {
+          alerts.push({ icon: "✅", title: "Everything looks great!", color: "#88d8b0",
+            msg: "No unusual patterns detected. Wet diapers, sleep, and feeding are all within normal range compared to last week. Keep it up! 🎉" });
+        }
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5, marginBottom: 4 }}>
+              Comparing last 7 days vs the prior 7 days. No AI key required.
+            </p>
+            {alerts.map((a, i) => (
+              <div key={i} style={{ background: `${a.color}15`, borderRadius: 16, padding: 16, border: `1px solid ${a.color}40` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 20 }}>{a.icon}</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: a.color }}>{a.title}</span>
+                </div>
+                <p style={{ fontSize: 13, color: theme.text, lineHeight: 1.6 }}>{a.msg}</p>
+              </div>
+            ))}
+            <p style={{ fontSize: 11, color: theme.textMuted, textAlign: "center", lineHeight: 1.4 }}>
+              💡 These are pattern observations, not medical advice. Always consult your pediatrician for health concerns.
+            </p>
+          </div>
+        );
+      })()}
 
       {tab === "history" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2434,7 +3099,7 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
     {(data.babies||[]).length === 1 && (
       <button onClick={() => setModal(<AddBabyModal theme={theme} addBaby={addBaby} onClose={() => setModal(null)} />)} style={{ width: "100%", padding: 12, borderRadius: 12, background: "none", border: `1px dashed ${theme.border}`, color: theme.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ Add Another Baby</button>
     )}
-    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Baby Profile</SectionLabel><input placeholder="Name" value={b.name === "Baby" ? "" : b.name} onChange={e => ub("name", e.target.value || "Baby")} style={{ ...inputStyle(theme), fontSize: 16, marginBottom: 10 }} /><label style={{ fontSize: 12, color: theme.textMuted, display: "block", marginBottom: 4 }}>Birth Date</label><input type="date" value={b.birthDate} onChange={e => ub("birthDate", e.target.value)} style={inputStyle(theme)} />{b.birthDate && <p style={{ fontSize: 13, color: theme.accent, marginTop: 8, fontWeight: 700 }}>{ageString(b.birthDate)}</p>}</div>
+    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}><SectionLabel theme={theme}>Baby Profile</SectionLabel><input placeholder="Name" value={b.name === "Baby" ? "" : b.name} onChange={e => ub("name", e.target.value || "Baby")} style={{ ...inputStyle(theme), fontSize: 16, marginBottom: 10 }} /><div style={{ display: "flex", gap: 8, marginBottom: 10 }}>{["boy","girl"].map(s => (<button key={s} onClick={() => ub("sex", s)} style={{ flex: 1, padding: "10px", borderRadius: 12, fontWeight: 700, fontSize: 13, cursor: "pointer", background: b.sex === s ? theme.accentSoft : theme.bg, border: `2px solid ${b.sex === s ? theme.accent : theme.border}`, color: b.sex === s ? theme.accent : theme.textMuted }}>{s === "boy" ? "👦 Boy" : "👧 Girl"}</button>))}</div><label style={{ fontSize: 12, color: theme.textMuted, display: "block", marginBottom: 4 }}>Birth Date</label><input type="date" value={b.birthDate} onChange={e => ub("birthDate", e.target.value)} style={inputStyle(theme)} />{b.birthDate && <p style={{ fontSize: 13, color: theme.accent, marginTop: 8, fontWeight: 700 }}>{ageString(b.birthDate)}</p>}</div>
     <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
       <SectionLabel theme={theme}>Theme</SectionLabel>
       <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
@@ -2970,6 +3635,8 @@ function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModa
       : "Fell asleep";
     if (l.type === "food") return `${l.foodName || ""} (${l.calories || 0} cal)`;
     if (l.type === "medicine") return `${l.name} ${l.dose || ""}`;
+    if (l.type === "pump") return `🤱 ${l.amount || 0} oz ${l.side ? "· " + l.side : ""}`;
+    if (l.type === "allergy") return `🚨 ${l.food || ""} — ${l.reactionLevel || ""}`;
     if (l.type === "teething") { const t = l.teeth?.length ? l.teeth.length === 1 ? (BABY_TEETH.find(x => x.id === l.teeth[0])?.label || l.teeth[0]) : `${l.teeth.length} teeth` : l.tooth || ""; return `🦷 ${t}`; }
     return l.note?.slice(0, 40) || "Note";
   };
@@ -3030,7 +3697,7 @@ function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModa
       {/* ── Summary cards ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
         {[
-          { icon: "🍼", label: "Bottle", line1: `${summary.bottleOz.toFixed(1)} oz`, line2: `${summary.bottleCount} feed${summary.bottleCount !== 1 ? "s" : ""}` },
+          { icon: "🍼", label: "Milk", line1: `${summary.bottleOz.toFixed(1)} oz`, line2: `${summary.bottleCount} feed${summary.bottleCount !== 1 ? "s" : ""}` },
           { icon: "🍎", label: "Food",   line1: `${summary.foodCal} cal`,             line2: `${summary.foodCount} item${summary.foodCount !== 1 ? "s" : ""}` },
           { icon: "😴", label: "Sleep",  line1: fmtSleep(summary.sleepMins),          line2: `${summary.sleepCount} nap${summary.sleepCount !== 1 ? "s" : ""}` },
           { icon: "💧", label: "Diaper", line1: `${summary.diapers}`,                 line2: `change${summary.diapers !== 1 ? "s" : ""}` },
@@ -3049,7 +3716,7 @@ function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModa
 
       {/* ── Type filter ── */}
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-        {["all","bottle","poop","diaper","sleep","food","medicine","note","teething"].map(type => (
+        {["all","bottle","pump","poop","diaper","sleep","food","medicine","allergy","note","teething"].map(type => (
           <button key={type} onClick={() => setFt(type)}
             style={{ background: ft === type ? t.accentSoft : t.card, border: `1px solid ${ft === type ? t.accent : t.border}`, borderRadius: 10, padding: "6px 12px", color: ft === type ? t.accent : t.textMuted, fontWeight: 700, fontSize: 11, textTransform: "capitalize", cursor: "pointer" }}>
             {type}
