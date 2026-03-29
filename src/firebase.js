@@ -50,11 +50,19 @@ export function getCurrentUser() {
 }
 
 export async function signInWithGoogle() {
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  if (isMobile) {
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+
+  // iOS Safari clears sessionStorage during cross-origin redirects (ITP),
+  // which breaks Firebase redirect auth silently — use popup on iOS instead.
+  // Android uses redirect (popups blocked in Android WebView/Chrome).
+  if (isAndroid) {
     await signInWithRedirect(auth, googleProvider);
     return null;
   }
+
+  // iOS and desktop: use popup
   const cred = await signInWithPopup(auth, googleProvider);
   return cred.user;
 }
