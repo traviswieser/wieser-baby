@@ -2847,19 +2847,61 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
       )}
 
       {/* ── Teething ── */}
-      {log.type === "teething" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div>
-            <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700, display: "block", marginBottom: 6 }}>TOOTH</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {["Bottom center L","Bottom center R","Top center L","Top center R","Bottom lateral L","Bottom lateral R","Top lateral L","Top lateral R","1st molar","Canine","2nd molar"].map(t => (
-                <button key={t} onClick={() => set("tooth", t)} style={{ padding: "6px 10px", borderRadius: 10, background: fields.tooth === t ? theme.accentSoft : theme.bg, border: `1px solid ${fields.tooth === t ? theme.accent : theme.border}`, cursor: "pointer", fontSize: 11, fontWeight: 700, color: fields.tooth === t ? theme.accent : theme.textMuted }}>{t}</button>
-              ))}
+      {log.type === "teething" && (() => {
+        // Support both old logs (tooth: string) and new logs (teeth: string[])
+        const selectedTeeth = fields.teeth || (fields.tooth ? [] : []);
+        const toggleTooth = (id) => {
+          const next = selectedTeeth.includes(id)
+            ? selectedTeeth.filter(x => x !== id)
+            : [...selectedTeeth, id];
+          const labels = BABY_TEETH.filter(t => next.includes(t.id)).map(t => t.label);
+          set("teeth", next);
+          set("tooth", labels[0] || "");
+        };
+        const upperTeeth = BABY_TEETH.filter(t => t.row === "upper");
+        const lowerTeeth = BABY_TEETH.filter(t => t.row === "lower");
+        const ToothBtnEdit = ({ tooth }) => {
+          const active = selectedTeeth.includes(tooth.id);
+          const isMolar = tooth.short.startsWith("M");
+          return (
+            <button onClick={() => toggleTooth(tooth.id)} title={tooth.label}
+              style={{ width: tooth.w, flexShrink: 0, height: isMolar ? 36 : 30,
+                borderRadius: isMolar ? "6px 6px 10px 10px" : "4px 4px 8px 8px",
+                background: active ? theme.accent : theme.bg,
+                border: `2px solid ${active ? theme.accent : theme.border}`,
+                cursor: "pointer", padding: 0, transition: "all 0.15s",
+                display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: active ? "#fff" : theme.textMuted, lineHeight: 1 }}>{tooth.short}</span>
+            </button>
+          );
+        };
+        const selectedLabels = BABY_TEETH.filter(t => selectedTeeth.includes(t.id)).map(t => t.label);
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 700 }}>TEETH</label>
+            <div style={{ background: theme.bg, borderRadius: 16, padding: "14px 10px", border: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: theme.textMuted, textTransform: "uppercase", textAlign: "center", marginBottom: 8 }}>Upper</div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 3, marginBottom: 10 }}>
+                {upperTeeth.map(t => <ToothBtnEdit key={t.id} tooth={t} />)}
+              </div>
+              <div style={{ height: 2, background: theme.border, borderRadius: 2, margin: "0 8px 10px" }} />
+              <div style={{ display: "flex", justifyContent: "center", gap: 3, marginBottom: 8 }}>
+                {lowerTeeth.map(t => <ToothBtnEdit key={t.id} tooth={t} />)}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: theme.textMuted, textTransform: "uppercase", textAlign: "center" }}>Lower</div>
             </div>
+            {selectedTeeth.length > 0 ? (
+              <div style={{ background: theme.accentSoft, borderRadius: 10, padding: "8px 12px", border: `1px solid ${theme.accent}40`, fontSize: 12 }}>
+                <span style={{ fontWeight: 700, color: theme.accent }}>{selectedTeeth.length === 1 ? "1 tooth" : `${selectedTeeth.length} teeth`}: </span>
+                <span style={{ color: theme.text }}>{selectedLabels.join(", ")}</span>
+              </div>
+            ) : (
+              <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", margin: 0 }}>No teeth selected</p>
+            )}
+            <input placeholder="Symptoms" value={fields.symptoms || ""} onChange={e => set("symptoms", e.target.value)} style={is} />
           </div>
-          <input placeholder="Symptoms" value={fields.symptoms || ""} onChange={e => set("symptoms", e.target.value)} style={is} />
-        </div>
-      )}
+        );
+      })()}
 
       <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
         <button onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 14, background: theme.bg, border: `1px solid ${theme.border}`, color: theme.text, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Cancel</button>
