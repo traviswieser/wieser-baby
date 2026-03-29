@@ -1841,9 +1841,9 @@ function BottleModal({ theme, addLog, todayStr, now }) {
         ))}
       </div>
       {/* Quick-pick amounts */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
         {[2,3,4,5,6,7,8].map(a => (
-          <button key={a} onClick={() => setAmt(a)} style={{ width: 56, height: 56, borderRadius: 16, fontSize: 18, fontWeight: 800, background: amt === a ? theme.accent : theme.bg, color: amt === a ? "#fff" : theme.text, border: `2px solid ${amt === a ? theme.accent : theme.border}`, cursor: "pointer" }}>{a}</button>
+          <button key={a} onClick={() => setAmt(a)} style={{ flex: 1, height: 52, borderRadius: 14, fontSize: 17, fontWeight: 800, background: amt === a ? theme.accent : theme.bg, color: amt === a ? "#fff" : theme.text, border: `2px solid ${amt === a ? theme.accent : theme.border}`, cursor: "pointer" }}>{a}</button>
         ))}
       </div>
       {/* Fine-tune stepper */}
