@@ -299,6 +299,108 @@ function getSplashTheme() {
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+// SOUND ENGINE — module-level singleton so audio survives modal
+// open/close and page navigation. React components just call
+// SoundEngine.start / stop and read isPlaying / getElapsed.
+// ═══════════════════════════════════════════════════════════════
+const SoundEngine = (() => {
+  let _ctx = null, _source = null, _timerHandle = null, _startMs = null;
+  let _currentSound = null;
+
+  const createBuffer = (ctx, soundId) => {
+    const sr = ctx.sampleRate;
+    const dur = soundId === "heartbeat" ? 1.5 : 6;
+    const buf = ctx.createBuffer(1, sr * dur, sr);
+    const data = buf.getChannelData(0);
+
+    if (soundId === "brown") {
+      // Brown (red) noise — deep rumble, deepest of the noise colours
+      let lastOut = 0;
+      for (let i = 0; i < data.length; i++) {
+        const w = Math.random() * 2 - 1;
+        lastOut = (lastOut + 0.02 * w) / 1.02;
+        data[i] = lastOut * 3.5;
+        if (data[i] > 1) data[i] = 1;
+        if (data[i] < -1) data[i] = -1;
+      }
+    } else if (soundId === "pink") {
+      let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+      for (let i = 0; i < data.length; i++) {
+        const w = Math.random() * 2 - 1;
+        b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+        b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+        b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+        data[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+      }
+    } else if (soundId === "rain") {
+      for (let i = 0; i < data.length; i++) {
+        const n = Math.random() * 2 - 1;
+        data[i] = n * (0.3 + 0.4 * Math.random()) * (Math.random() < 0.95 ? 0.2 : 0.8);
+      }
+    } else if (soundId === "ocean") {
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sr;
+        const wave = Math.sin(2 * Math.PI * 0.15 * t) * Math.sin(2 * Math.PI * 0.08 * t);
+        data[i] = (Math.random() * 2 - 1) * 0.15 + wave * 0.4;
+      }
+    } else if (soundId === "fan") {
+      let b = 0;
+      for (let i = 0; i < data.length; i++) {
+        const w = Math.random() * 2 - 1;
+        b = b * 0.998 + w * 0.002;
+        data[i] = (b + w * 0.05) * 0.6;
+      }
+    } else if (soundId === "heartbeat") {
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sr;
+        const beat1 = t > 0.1 && t < 0.25 ? Math.sin(Math.PI*(t-0.1)/0.075)*Math.exp(-12*(t-0.1)) : 0;
+        const beat2 = t > 0.4 && t < 0.55 ? Math.sin(Math.PI*(t-0.4)/0.075)*Math.exp(-15*(t-0.4))*0.6 : 0;
+        data[i] = (beat1 + beat2) * 0.9;
+      }
+    }
+    return buf;
+  };
+
+  return {
+    start(soundId, timerMins, onAutoStop) {
+      // Stop any currently playing sound first
+      this.stop();
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = 0.65;
+        gainNode.connect(ctx.destination);
+        const buf = createBuffer(ctx, soundId);
+        const source = ctx.createBufferSource();
+        source.buffer = buf;
+        source.loop = true;
+        source.connect(gainNode);
+        source.start();
+        _ctx = ctx; _source = source; _startMs = Date.now(); _currentSound = soundId;
+        if (timerMins > 0) {
+          _timerHandle = setTimeout(() => {
+            this.stop();
+            onAutoStop?.();
+          }, timerMins * 60 * 1000);
+        }
+      } catch (e) {
+        console.error("SoundEngine.start failed:", e);
+      }
+    },
+    stop() {
+      try { _source?.stop(); } catch {}
+      try { _ctx?.close(); } catch {}
+      clearTimeout(_timerHandle);
+      _ctx = null; _source = null; _timerHandle = null; _startMs = null; _currentSound = null;
+    },
+    isPlaying()       { return _ctx !== null && _ctx.state !== "closed"; },
+    getElapsed()      { return _startMs ? Math.floor((Date.now() - _startMs) / 1000) : 0; },
+    getCurrentSound() { return _currentSound; },
+  };
+})();
+
 export default function WieserBabyApp() {
   const [currentUser, setCurrentUser] = useState(undefined); // undefined = loading, null = signed out
   const [page, setPage] = useState("dashboard");
@@ -313,6 +415,8 @@ export default function WieserBabyApp() {
     catch { return DEFAULT_REMINDERS; }
   });
   const [notifPermission, setNotifPermission] = useState(getNotificationPermission);
+  const [soundActive, setSoundActive] = useState(false);
+  const [soundName, setSoundName]     = useState("brown");
 
   const [sysDark, setSysDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   useEffect(() => {
@@ -502,7 +606,7 @@ export default function WieserBabyApp() {
         .tab-btn:active { transform: scale(0.95); }
       `}</style>
       <div style={{ position: "fixed", inset: 0, background: theme.bg, zIndex: -1 }} />
-      <div style={{ fontFamily: "'Nunito', sans-serif", background: theme.bg, color: theme.text, minHeight: "100vh", maxWidth: 520, margin: "0 auto", position: "relative", paddingBottom: 90 }}>
+      <div style={{ fontFamily: "'Nunito', sans-serif", background: theme.bg, color: theme.text, minHeight: "100vh", maxWidth: 520, margin: "0 auto", position: "relative", paddingBottom: soundActive ? 130 : 90 }}>
         {/* Header */}
         <header style={{ padding: "16px 20px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50, background: `linear-gradient(${theme.bg}, ${theme.bg}ee)`, backdropFilter: "blur(12px)" }}>
           <div>
@@ -548,6 +652,47 @@ export default function WieserBabyApp() {
           {page === "family" && <FamilyPage {...commonProps} />}
           {page === "pooplog" && <PoopLogPage {...commonProps} />}
         </main>
+
+        {/* Sleep sounds mini-bar — sits just above the nav bar */}
+        {soundActive && (() => {
+          const SOUND_INFO = {
+            brown: { emoji: "🟫", label: "Brown Noise" },
+            pink:  { emoji: "🌸", label: "Pink Noise" },
+            rain:  { emoji: "🌧️", label: "Rain" },
+            ocean: { emoji: "🌊", label: "Ocean" },
+            fan:   { emoji: "🌀", label: "Fan" },
+            heartbeat: { emoji: "💓", label: "Heartbeat" },
+          };
+          const info = SOUND_INFO[soundName] || SOUND_INFO.brown;
+          return (
+            <div style={{
+              position: "fixed", bottom: "calc(56px + env(safe-area-inset-bottom, 0px))",
+              left: "50%", transform: "translateX(-50%)",
+              width: "100%", maxWidth: 520, zIndex: 99,
+              background: `linear-gradient(135deg, ${theme.accent}ee, ${theme.purple}ee)`,
+              backdropFilter: "blur(16px)",
+              borderTop: `1px solid ${theme.accent}60`,
+              padding: "8px 16px",
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ fontSize: 18 }}>{info.emoji}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{info.label}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>Playing · tap to open</div>
+              </div>
+              <button
+                onClick={() => setModal(<SleepSoundsModal theme={theme} soundActive={soundActive} setSoundActive={setSoundActive} soundName={soundName} setSoundName={setSoundName} />)}
+                style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 10, padding: "6px 12px", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                Open
+              </button>
+              <button
+                onClick={() => { SoundEngine.stop(); setSoundActive(false); }}
+                style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 10, padding: "6px 12px", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                ⏹
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Bottom Nav */}
         <nav style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 520, background: `${theme.card}f5`, backdropFilter: "blur(16px)", borderTop: `1px solid ${theme.border}`, display: "flex", justifyContent: "space-around", padding: `8px 4px calc(8px + env(safe-area-inset-bottom, 0px))`, zIndex: 100 }}>
@@ -722,7 +867,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
         <QuickAction icon="🩺" label="Doctor" theme={theme} onClick={() => setModal(<DoctorModal theme={theme} data={data} updateData={updateData} showToast={showToast} />)} />
         <QuickAction icon="💩" label="Poop Log" theme={theme} onClick={() => navigate("pooplog")} />
         <QuickAction icon="🚨" label="Allergy" theme={theme} onClick={() => setModal(<AllergyModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
-        <QuickAction icon="🎵" label="Sounds" theme={theme} onClick={() => setModal(<SleepSoundsModal theme={theme} />)} />
+        <QuickAction icon="🎵" label="Sounds" theme={theme} onClick={() => setModal(<SleepSoundsModal theme={theme} soundActive={soundActive} setSoundActive={setSoundActive} soundName={soundName} setSoundName={setSoundName} />)} />
       </div>
 
       {/* Poop health alert */}
@@ -1653,24 +1798,35 @@ function AllergyModal({ theme, addLog, todayStr, now }) {
 // ═══════════════════════════════════════════════════════════════
 // SLEEP SOUNDS MODAL — Web Audio white noise / nature sounds
 // ═══════════════════════════════════════════════════════════════
-function SleepSoundsModal({ theme }) {
-  const [sound, setSound]       = useState("white");
-  const [playing, setPlaying]   = useState(false);
-  const [timerMins, setTimerMins] = useState(0); // 0 = play forever
-  const [elapsed, setElapsed]   = useState(0);   // seconds
-  const ctxRef    = useRef(null);
-  const sourceRef = useRef(null);
-  const gainRef   = useRef(null);
-  const timerRef  = useRef(null);
-  const startRef  = useRef(null);
+function SleepSoundsModal({ theme, soundActive, setSoundActive, soundName, setSoundName }) {
+  // Sync local UI state from the live SoundEngine on mount (in case sound was
+  // already playing when the modal was opened from the mini-bar).
+  const [sound, setSound]         = useState(() => SoundEngine.getCurrentSound() || soundName || "brown");
+  const [timerMins, setTimerMins] = useState(0);
+  const [elapsed, setElapsed]     = useState(() => SoundEngine.getElapsed());
+  const playing = soundActive;
+  const intervalRef = useRef(null);
+
+  // Tick elapsed while this modal is open — display only, no side effects
+  useEffect(() => {
+    if (playing) {
+      intervalRef.current = setInterval(() => setElapsed(SoundEngine.getElapsed()), 1000);
+    } else {
+      clearInterval(intervalRef.current);
+      setElapsed(0);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [playing]);
+
+  // No cleanup that stops audio — the SoundEngine lives on after unmount
 
   const SOUNDS = [
-    { id: "white",     label: "White Noise",  emoji: "🌫️" },
-    { id: "pink",      label: "Pink Noise",   emoji: "🌸" },
-    { id: "rain",      label: "Rain",         emoji: "🌧️" },
-    { id: "ocean",     label: "Ocean",        emoji: "🌊" },
-    { id: "fan",       label: "Fan",          emoji: "🌀" },
-    { id: "heartbeat", label: "Heartbeat",    emoji: "💓" },
+    { id: "brown",     label: "Brown Noise", emoji: "🟫" },
+    { id: "pink",      label: "Pink Noise",  emoji: "🌸" },
+    { id: "rain",      label: "Rain",        emoji: "🌧️" },
+    { id: "ocean",     label: "Ocean",       emoji: "🌊" },
+    { id: "fan",       label: "Fan",         emoji: "🌀" },
+    { id: "heartbeat", label: "Heartbeat",   emoji: "💓" },
   ];
 
   const TIMERS = [
@@ -1682,101 +1838,46 @@ function SleepSoundsModal({ theme }) {
     { mins: 60, label: "1h" },
   ];
 
-  const createBuffer = (ctx, soundId) => {
-    const sr = ctx.sampleRate;
-    const dur = soundId === "heartbeat" ? 1.5 : 4;
-    const buf = ctx.createBuffer(1, sr * dur, sr);
-    const data = buf.getChannelData(0);
+  const handlePlay = () => {
+    SoundEngine.start(sound, timerMins, () => {
+      // Auto-stop callback (fires when timer expires)
+      setSoundActive(false);
+    });
+    setSoundActive(true);
+    setSoundName(sound);
+    setElapsed(0);
+  };
 
-    if (soundId === "white") {
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    } else if (soundId === "pink") {
-      let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
-      for (let i = 0; i < data.length; i++) {
-        const w = Math.random() * 2 - 1;
-        b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
-        b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
-        b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
-        data[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
-      }
-    } else if (soundId === "rain") {
-      for (let i = 0; i < data.length; i++) {
-        const n = Math.random() * 2 - 1;
-        data[i] = n * (0.3 + 0.4 * Math.random()) * (Math.random() < 0.95 ? 0.2 : 0.8);
-      }
-    } else if (soundId === "ocean") {
-      for (let i = 0; i < data.length; i++) {
-        const t = i / sr;
-        const wave = Math.sin(2 * Math.PI * 0.15 * t) * Math.sin(2 * Math.PI * 0.08 * t);
-        data[i] = (Math.random() * 2 - 1) * 0.15 + wave * 0.4;
-      }
-    } else if (soundId === "fan") {
-      let b = 0;
-      for (let i = 0; i < data.length; i++) {
-        const w = Math.random() * 2 - 1;
-        b = b * 0.998 + w * 0.002;
-        data[i] = (b + w * 0.05) * 0.6;
-      }
-    } else if (soundId === "heartbeat") {
-      for (let i = 0; i < data.length; i++) {
-        const t = i / sr;
-        const beat1 = t > 0.1 && t < 0.25 ? Math.sin(Math.PI * (t - 0.1) / 0.075) * Math.exp(-12 * (t - 0.1)) : 0;
-        const beat2 = t > 0.4 && t < 0.55 ? Math.sin(Math.PI * (t - 0.4) / 0.075) * Math.exp(-15 * (t - 0.4)) * 0.6 : 0;
-        data[i] = (beat1 + beat2) * 0.9;
-      }
+  const handleStop = () => {
+    SoundEngine.stop();
+    setSoundActive(false);
+    setElapsed(0);
+  };
+
+  const handleSoundChange = (id) => {
+    if (playing) {
+      SoundEngine.start(id, timerMins, () => setSoundActive(false));
+      setSoundName(id);
+      setElapsed(0);
     }
-    return buf;
+    setSound(id);
   };
 
-  const startSound = () => {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const gainNode = ctx.createGain();
-    gainNode.gain.value = 0.6;
-    gainNode.connect(ctx.destination);
-
-    const buf = createBuffer(ctx, sound);
-    const source = ctx.createBufferSource();
-    source.buffer = buf;
-    source.loop = true;
-    source.connect(gainNode);
-    source.start();
-
-    ctxRef.current = ctx;
-    sourceRef.current = source;
-    gainRef.current = gainNode;
-    startRef.current = Date.now();
-    setPlaying(true);
-    setElapsed(0);
-
-    timerRef.current = setInterval(() => {
-      const secs = Math.floor((Date.now() - startRef.current) / 1000);
-      setElapsed(secs);
-      if (timerMins > 0 && secs >= timerMins * 60) stopSound();
-    }, 1000);
-  };
-
-  const stopSound = () => {
-    try { sourceRef.current?.stop(); } catch {}
-    try { ctxRef.current?.close(); } catch {}
-    clearInterval(timerRef.current);
-    setPlaying(false);
-    setElapsed(0);
-  };
-
-  useEffect(() => () => stopSound(), []);
-
+  const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const remaining = timerMins > 0 ? Math.max(0, timerMins * 60 - elapsed) : null;
-  const fmtTime = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+  const currentInfo = SOUNDS.find(s => s.id === sound);
 
   return (
     <div>
       <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4, textAlign: "center" }}>🎵 Sleep Sounds</h2>
-      <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 20 }}>Keep app open to play</p>
+      <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 16 }}>
+        Sound continues playing after closing this dialog
+      </p>
 
       {/* Sound selector */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
         {SOUNDS.map(s => (
-          <button key={s.id} onClick={() => { if (playing) stopSound(); setSound(s.id); }}
+          <button key={s.id} onClick={() => handleSoundChange(s.id)}
             style={{ padding: "12px 8px", borderRadius: 14, textAlign: "center",
               background: sound === s.id ? theme.accentSoft : theme.bg,
               border: `2px solid ${sound === s.id ? theme.accent : theme.border}`,
@@ -1788,7 +1889,7 @@ function SleepSoundsModal({ theme }) {
       </div>
 
       {/* Timer selector */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         {TIMERS.map(t => (
           <button key={t.mins} onClick={() => setTimerMins(t.mins)}
             style={{ flex: 1, padding: "8px 4px", borderRadius: 10, textAlign: "center", fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -1801,27 +1902,23 @@ function SleepSoundsModal({ theme }) {
       </div>
 
       {/* Play/Stop */}
-      <button onClick={playing ? stopSound : startSound}
+      <button onClick={playing ? handleStop : handlePlay}
         style={{ width: "100%", padding: 18, borderRadius: 20, fontSize: 18, fontWeight: 900, border: "none", cursor: "pointer",
           background: playing ? theme.border : `linear-gradient(135deg, ${theme.accent}, ${theme.purple})`,
           color: playing ? theme.text : "#fff" }}>
         {playing ? "⏹ Stop" : "▶ Play"}
       </button>
 
-      {playing && (
-        <div style={{ textAlign: "center", marginTop: 14 }}>
-          <div style={{ fontSize: 28, animation: "pulse 1.5s ease-in-out infinite" }}>
-            {SOUNDS.find(s => s.id === sound)?.emoji}
-          </div>
-          <p style={{ fontSize: 13, color: theme.accent, fontWeight: 700, marginTop: 4 }}>
-            {SOUNDS.find(s => s.id === sound)?.label} playing…
-          </p>
-          {remaining !== null
-            ? <p style={{ fontSize: 12, color: theme.textMuted }}>Stops in {fmtTime(remaining)}</p>
-            : <p style={{ fontSize: 12, color: theme.textMuted }}>Playing until stopped · {fmtTime(elapsed)}</p>
-          }
-        </div>
-      )}
+      {/* Status area — ALWAYS rendered at fixed height to prevent layout shift */}
+      <div style={{ height: 80, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", marginTop: 4, opacity: playing ? 1 : 0, transition: "opacity 0.3s" }}>
+        <div style={{ fontSize: 26 }}>{currentInfo?.emoji}</div>
+        <p style={{ fontSize: 13, color: theme.accent, fontWeight: 700, margin: "4px 0 2px" }}>
+          {currentInfo?.label} playing…
+        </p>
+        <p style={{ fontSize: 12, color: theme.textMuted, fontVariantNumeric: "tabular-nums", margin: 0 }}>
+          {remaining !== null ? `Stops in ${fmtTime(remaining)}` : `Playing · ${fmtTime(elapsed)}`}
+        </p>
+      </div>
     </div>
   );
 }
