@@ -2452,7 +2452,7 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
       </p>
       <button
         onClick={() => {
-          const url = "https://wieserbaby.netlify.app";
+          const url = "https://wieser-baby.netlify.app";
           const text = "Check out Wieser Baby — a free app for tracking feeding, sleep, diapers, milestones & more! 👶";
           if (navigator.share) {
             navigator.share({ title: "Wieser Baby", text, url }).catch(() => {});
