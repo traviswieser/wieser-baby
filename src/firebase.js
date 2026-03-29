@@ -18,6 +18,8 @@ import {
   sendPasswordResetEmail,
   signOut,
   updateProfile,
+  browserLocalPersistence,
+  setPersistence,
 } from "firebase/auth";
 
 const firebaseConfig = {
@@ -50,11 +52,32 @@ export function getCurrentUser() {
 }
 
 export async function signInWithGoogle() {
-  // Use popup for all platforms. Redirect auth silently fails on modern iOS and
-  // Android due to storage partitioning / ITP clearing Firebase's session token
-  // during the cross-origin redirect. Popup keeps everything in one context.
-  const cred = await signInWithPopup(auth, googleProvider);
-  return cred.user;
+  // Standalone PWA mode (installed to home screen) has no window.opener,
+  // so popup auth can't post its result back. Use redirect in that case.
+  // For redirect to survive iOS/Android storage partitioning, set persistence
+  // to LOCAL (localStorage) before redirecting — it survives page unloads.
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+
+  if (isStandalone) {
+    await setPersistence(auth, browserLocalPersistence);
+    await signInWithRedirect(auth, googleProvider);
+    return null;
+  }
+
+  // Browser tab: use popup (works on desktop and mobile browsers)
+  try {
+    const cred = await signInWithPopup(auth, googleProvider);
+    return cred.user;
+  } catch (err) {
+    if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request") {
+      // Popup blocked — fall back to redirect with local persistence
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function checkRedirectResult() {
