@@ -18,8 +18,6 @@ import {
   sendPasswordResetEmail,
   signOut,
   updateProfile,
-  browserLocalPersistence,
-  setPersistence,
 } from "firebase/auth";
 
 const firebaseConfig = {
@@ -52,28 +50,19 @@ export function getCurrentUser() {
 }
 
 export async function signInWithGoogle() {
-  // WHY POPUP INSTEAD OF REDIRECT IN PWA MODE:
-  // signInWithRedirect relies on a hidden cross-origin iframe (firebaseapp.com)
-  // to pass the auth result back to the app. Modern mobile browsers (Safari ITP,
-  // Chrome storage partitioning) block cross-origin iframe storage — so the
-  // result is silently lost and getRedirectResult() returns null, causing the
-  // sign-in loop. signInWithPopup avoids this entirely by communicating via
-  // postMessage from a popup window, which is not subject to the same restrictions.
-  //
-  // Android Chrome PWA: popup works perfectly in standalone mode.
-  // iOS Safari PWA: popups are blocked; caller detects this and shows a message.
-  // Desktop: popup has always worked fine.
-
-  await setPersistence(auth, browserLocalPersistence);
-
+  // CRITICAL: signInWithPopup must be called with NO awaits before it.
+  // Safari (iOS and desktop) requires window.open() to be called synchronously
+  // within a user gesture handler. Any await before signInWithPopup breaks that
+  // chain and Safari silently kills the popup — it doesn't even throw
+  // auth/popup-blocked, it just does nothing. This is why setPersistence must
+  // NOT be called here. Wieser Workouts uses this exact same pattern and works.
   try {
     const cred = await signInWithPopup(auth, googleProvider);
     return cred.user;
   } catch (err) {
     if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request") {
-      // Popup was blocked by the browser (common on iOS Safari PWA).
-      // Fall back to redirect — this works on desktop and Android browser tabs,
-      // but may still loop on iOS Safari PWA. The UI will show a tip for that case.
+      // Popup was explicitly blocked (e.g. iOS Safari PWA standalone mode).
+      // Fall back to redirect flow — getRedirectResult() in App.jsx picks this up on reload.
       await signInWithRedirect(auth, googleProvider);
       return null;
     }

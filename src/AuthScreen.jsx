@@ -209,13 +209,13 @@ export default function AuthScreen({ onSignedIn, theme }) {
             borderRadius: 12, padding: "12px 16px",
             fontSize: 13, color: t.text, lineHeight: 1.6,
           }}>
-            <strong>⚠️ iOS Safari doesn't support Google sign-in in the installed app.</strong>
+            <strong>⚠️ Google sign-in isn't supported in the installed app on iOS.</strong>
             <br />
             Two options:
             <br />
-            • <strong>Use email/password</strong> instead (works perfectly in the app) — or —
+            • <strong>Use email/password</strong> below — or —
             <br />
-            • Open <strong>Safari</strong>, go to your app's URL, sign in with Google there, then come back to this icon. You'll be signed in automatically.
+            • Open in <strong>Safari</strong>, sign in with Google there, then return to this icon. You'll be signed in automatically.
           </div>
         )}
         {isStandalonePwa && !isIosPwa && (
