@@ -675,7 +675,7 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <QuickLogButton icon="🍼" label="Bottle" sublabel={timeAgo(lastBottle) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<BottleModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
         <QuickLogButton icon="😴" label={data.sleepState ? "Wake Up" : "Sleep"} sublabel={data.sleepState ? sleepDur : (timeAgo(lastSleep) || "not yet today")} color={theme.purple} theme={theme} onClick={handleSleepToggle} active={!!data.sleepState} />
-        <QuickLogButton icon="💧" label="Diaper" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<DiaperModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} />)} />
+        <QuickLogButton icon="💧" label="Diaper" sublabel={timeAgo(lastPoop) || "not yet today"} color={theme.info} theme={theme} onClick={() => setModal(<DiaperModal theme={theme} addLog={addLog} todayStr={todayStr} now={now} setModal={setModal} />)} />
         <QuickLogButton icon="🍎" label="Food" sublabel={timeAgo(lastFood) || "not yet today"} color={theme.success} theme={theme} onClick={() => setModal(<FoodLogModal theme={theme} addLog={addLog} data={data} updateData={updateData} todayStr={todayStr} now={now} showToast={showToast} />)} />
       </div>
 
@@ -772,19 +772,27 @@ function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, upd
 }
 
 // ─── DIAPER MODAL ────────────────────────────────────────────
-function DiaperModal({ theme, addLog, todayStr, now }) {
+function DiaperModal({ theme, addLog, todayStr, now, setModal }) {
   const [time, setTime] = useState(localTimeStr(now));
   const [hasWet, setHasWet] = useState(true);
   const [hasPoop, setHasPoop] = useState(false);
 
-  const logIt = () => {
+  const handleLog = () => {
     if (hasPoop) {
-      // Open the poop wizard with wet pre-selected
-      // We handle this by closing and opening PoopModal — but since we can't
-      // nest modals, we just log the wet diaper and let the poop wizard handle poop
+      // Transition to full poop wizard, carrying wet selection over
+      setModal(
+        <PoopModal
+          theme={theme}
+          addLog={addLog}
+          todayStr={todayStr}
+          now={now}
+          includeWet={hasWet}
+          initialTime={time}
+        />
+      );
+    } else {
+      if (hasWet) addLog({ type: "diaper", subtype: "wet", date: todayStr, time });
     }
-    if (hasWet) addLog({ type: "diaper", subtype: "wet", date: todayStr, time });
-    if (!hasPoop) return; // wet-only: done
   };
 
   return (
@@ -813,19 +821,12 @@ function DiaperModal({ theme, addLog, todayStr, now }) {
 
       <button
         disabled={!hasWet && !hasPoop}
-        onClick={() => {
-          if (hasWet) addLog({ type: "diaper", subtype: "wet", date: todayStr, time });
-          if (hasPoop) addLog({ type: "poop", subtype: "combined", date: todayStr, time, combined: true });
-        }}
+        onClick={handleLog}
         style={{ width: "100%", padding: 16, borderRadius: 16, background: (hasWet || hasPoop) ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: (hasWet || hasPoop) ? "pointer" : "default" }}>
-        Log {hasWet && hasPoop ? "Pee + Poop 💧💩" : hasWet ? "Wet Diaper 💧" : "Poop Diaper 💩"}
+        {hasPoop
+          ? (hasWet ? "Next: Poop Details 💧💩 →" : "Next: Poop Details 💩 →")
+          : "Log Wet Diaper 💧"}
       </button>
-
-      {hasPoop && (
-        <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 10, lineHeight: 1.5 }}>
-          💡 Tap the big Poop button to record color & consistency details.
-        </p>
-      )}
     </div>
   );
 }
@@ -833,13 +834,13 @@ function DiaperModal({ theme, addLog, todayStr, now }) {
 // ═══════════════════════════════════════════════════════════════
 // ENHANCED POOP MODAL (3-step wizard)
 // ═══════════════════════════════════════════════════════════════
-function PoopModal({ theme, addLog, todayStr, now, includeWet }) {
+function PoopModal({ theme, addLog, todayStr, now, includeWet, initialTime }) {
   const [step, setStep] = useState(1);
   const [color, setColor] = useState("");
   const [consistency, setConsistency] = useState("");
   const [amount, setAmount] = useState("medium");
   const [notes, setNotes] = useState("");
-  const [time, setTime] = useState(localTimeStr(now));
+  const [time, setTime] = useState(initialTime || localTimeStr(now));
   const [alsoWet, setAlsoWet] = useState(!!includeWet);
 
   const ci = POOP_COLORS.find(c => c.id === color);
@@ -1563,9 +1564,129 @@ function NoteModal({ theme, addLog, todayStr, now }) {
   const [n, setN] = useState(""); const [t, setT] = useState(localTimeStr(now));
   return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>📝 Note</h2><textarea placeholder="What's happening?" value={n} onChange={e => setN(e.target.value)} rows={4} style={{ ...inputStyle(theme), fontSize: 16, resize: "none", marginBottom: 10 }} /><input type="time" value={t} onChange={e => setT(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 16, textAlign: "center" }} /><button onClick={() => n && addLog({ type: "note", note: n, date: todayStr, time: t })} disabled={!n} style={{ width: "100%", padding: 16, borderRadius: 16, background: n ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: n ? "pointer" : "default" }}>Save</button></div>);
 }
+// ─── Baby teeth chart data (20 primary teeth) ────────────────
+// Each tooth has an id, short label, full label, arch row, and relative width.
+// Positions go left-to-right on screen (patient's right = screen left).
+const BABY_TEETH = [
+  // Upper arch
+  { id: "ur5", short: "M2", label: "Upper Right 2nd Molar",  row: "upper", w: 32 },
+  { id: "ur4", short: "M1", label: "Upper Right 1st Molar",  row: "upper", w: 28 },
+  { id: "ur3", short: "C",  label: "Upper Right Canine",     row: "upper", w: 22 },
+  { id: "ur2", short: "LI", label: "Upper Right Lateral",    row: "upper", w: 18 },
+  { id: "ur1", short: "CI", label: "Upper Right Central",    row: "upper", w: 20 },
+  { id: "ul1", short: "CI", label: "Upper Left Central",     row: "upper", w: 20 },
+  { id: "ul2", short: "LI", label: "Upper Left Lateral",     row: "upper", w: 18 },
+  { id: "ul3", short: "C",  label: "Upper Left Canine",      row: "upper", w: 22 },
+  { id: "ul4", short: "M1", label: "Upper Left 1st Molar",   row: "upper", w: 28 },
+  { id: "ul5", short: "M2", label: "Upper Left 2nd Molar",   row: "upper", w: 32 },
+  // Lower arch
+  { id: "lr5", short: "M2", label: "Lower Right 2nd Molar",  row: "lower", w: 32 },
+  { id: "lr4", short: "M1", label: "Lower Right 1st Molar",  row: "lower", w: 28 },
+  { id: "lr3", short: "C",  label: "Lower Right Canine",     row: "lower", w: 22 },
+  { id: "lr2", short: "LI", label: "Lower Right Lateral",    row: "lower", w: 18 },
+  { id: "lr1", short: "CI", label: "Lower Right Central",    row: "lower", w: 20 },
+  { id: "ll1", short: "CI", label: "Lower Left Central",     row: "lower", w: 20 },
+  { id: "ll2", short: "LI", label: "Lower Left Lateral",     row: "lower", w: 18 },
+  { id: "ll3", short: "C",  label: "Lower Left Canine",      row: "lower", w: 22 },
+  { id: "ll4", short: "M1", label: "Lower Left 1st Molar",   row: "lower", w: 28 },
+  { id: "ll5", short: "M2", label: "Lower Left 2nd Molar",   row: "lower", w: 32 },
+];
+
 function TeethingModal({ theme, addLog, todayStr, now }) {
-  const [tooth, setTooth] = useState(""); const [sym, setSym] = useState("");
-  return (<div><h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 20, textAlign: "center" }}>🦷 Teething</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>{["Bottom center L","Bottom center R","Top center L","Top center R","Bottom lateral L","Bottom lateral R","Top lateral L","Top lateral R","1st molar","Canine","2nd molar"].map(t => (<button key={t} onClick={() => setTooth(t)} style={{ background: tooth === t ? theme.accentSoft : theme.bg, border: `1px solid ${tooth === t ? theme.accent : theme.border}`, borderRadius: 12, padding: "6px 12px", color: tooth === t ? theme.accent : theme.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{t}</button>))}</div><input placeholder="Symptoms" value={sym} onChange={e => setSym(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 16 }} /><button onClick={() => tooth && addLog({ type: "teething", tooth, symptoms: sym, date: todayStr, time: localTimeStr(now) })} disabled={!tooth} style={{ width: "100%", padding: 16, borderRadius: 16, background: tooth ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: tooth ? "pointer" : "default" }}>Log</button></div>);
+  const [teeth, setTeeth] = useState([]);
+  const [sym, setSym] = useState("");
+
+  const toggle = (id) => setTeeth(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  );
+
+  const upperTeeth = BABY_TEETH.filter(t => t.row === "upper");
+  const lowerTeeth = BABY_TEETH.filter(t => t.row === "lower");
+
+  const ToothBtn = ({ tooth }) => {
+    const selected = teeth.includes(tooth.id);
+    const isMolar = tooth.short.startsWith("M");
+    return (
+      <button
+        key={tooth.id}
+        onClick={() => toggle(tooth.id)}
+        title={tooth.label}
+        style={{
+          width: tooth.w, flexShrink: 0,
+          height: isMolar ? 36 : 30,
+          borderRadius: isMolar ? "6px 6px 10px 10px" : "4px 4px 8px 8px",
+          background: selected ? theme.accent : theme.bg,
+          border: `2px solid ${selected ? theme.accent : theme.border}`,
+          cursor: "pointer", padding: 0, transition: "all 0.15s",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+        <span style={{ fontSize: 9, fontWeight: 800, color: selected ? "#fff" : theme.textMuted, lineHeight: 1 }}>
+          {tooth.short}
+        </span>
+      </button>
+    );
+  };
+
+  const selectedLabels = BABY_TEETH.filter(t => teeth.includes(t.id)).map(t => t.label);
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22, marginBottom: 4, textAlign: "center" }}>🦷 Teething</h2>
+      <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 16 }}>
+        Tap to select affected teeth
+      </p>
+
+      {/* Dental chart */}
+      <div style={{ background: theme.bg, borderRadius: 20, padding: "16px 12px", border: `1px solid ${theme.border}`, marginBottom: 14 }}>
+        {/* Upper label */}
+        <div style={{ fontSize: 10, fontWeight: 800, color: theme.textMuted, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center", marginBottom: 8 }}>Upper</div>
+
+        {/* Upper arch */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 3, marginBottom: 10 }}>
+          {upperTeeth.map(t => <ToothBtn key={t.id} tooth={t} />)}
+        </div>
+
+        {/* Gum divider */}
+        <div style={{ height: 2, background: `${theme.border}`, borderRadius: 2, margin: "0 8px 10px" }} />
+
+        {/* Lower arch */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 3, marginBottom: 8 }}>
+          {lowerTeeth.map(t => <ToothBtn key={t.id} tooth={t} />)}
+        </div>
+
+        {/* Lower label */}
+        <div style={{ fontSize: 10, fontWeight: 800, color: theme.textMuted, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Lower</div>
+      </div>
+
+      {/* Selected list */}
+      {teeth.length > 0 ? (
+        <div style={{ background: theme.accentSoft, borderRadius: 12, padding: "10px 14px", marginBottom: 14, border: `1px solid ${theme.accent}40` }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>
+            {teeth.length === 1 ? "1 tooth selected" : `${teeth.length} teeth selected`}:
+          </span>
+          <span style={{ fontSize: 12, color: theme.text, marginLeft: 6 }}>
+            {selectedLabels.join(", ")}
+          </span>
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginBottom: 14 }}>No teeth selected yet</p>
+      )}
+
+      <input
+        placeholder="Symptoms (drooling, fussiness…)"
+        value={sym}
+        onChange={e => setSym(e.target.value)}
+        style={{ ...inputStyle(theme), marginBottom: 16 }}
+      />
+
+      <button
+        onClick={() => teeth.length > 0 && addLog({ type: "teething", teeth, tooth: selectedLabels[0] || "", symptoms: sym, date: todayStr, time: localTimeStr(now) })}
+        disabled={teeth.length === 0}
+        style={{ width: "100%", padding: 16, borderRadius: 16, background: teeth.length > 0 ? theme.accent : theme.border, color: "#fff", fontWeight: 800, fontSize: 16, border: "none", cursor: teeth.length > 0 ? "pointer" : "default" }}>
+        {teeth.length === 0 ? "Select a tooth to log" : `🦷 Log ${teeth.length} Tooth${teeth.length > 1 ? "": ""}`}
+      </button>
+    </div>
+  );
 }
 function DoctorModal({ theme, data, updateData, showToast }) {
   const [d, setD]     = useState(localDateStr());
@@ -2807,7 +2928,7 @@ function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModa
       : "Fell asleep";
     if (l.type === "food") return `${l.foodName || ""} (${l.calories || 0} cal)`;
     if (l.type === "medicine") return `${l.name} ${l.dose || ""}`;
-    if (l.type === "teething") return `Tooth - ${l.tooth || ""}`;
+    if (l.type === "teething") { const t = l.teeth?.length ? l.teeth.length === 1 ? (BABY_TEETH.find(x => x.id === l.teeth[0])?.label || l.teeth[0]) : `${l.teeth.length} teeth` : l.tooth || ""; return `🦷 ${t}`; }
     return l.note?.slice(0, 40) || "Note";
   };
 
