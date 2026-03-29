@@ -580,7 +580,7 @@ export default function WieserBabyApp() {
   const todayStr = localDateStr(now);
   const todayLogs = data.logs.filter(l => l.date === todayStr);
   const setThemePref = (t) => { setUserTheme(currentUser?.uid || null, t); setUserThemeKey(t); };
-  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange, userThemeKey, setThemePref };
+  const commonProps = { data, theme, updateData, showToast, addLog, todayStr, now, setModal, navigate, navigateBack, todayLogs, activeBaby, activeBabyId, switchBaby, addBaby, reminders, setReminders, notifPermission, setNotifPermission, currentUser, setCurrentUser, handleHouseholdChange, userThemeKey, setThemePref, soundActive, setSoundActive, soundName, setSoundName };
 
   return (
     <>
@@ -740,7 +740,7 @@ const logIcon = (type) => ({ bottle: "🍼", poop: "💩", diaper: "🩲", sleep
 // ═══════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
-function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, updateData, now, navigate, showToast }) {
+function DashboardPage({ data, todayLogs, todayStr, theme, setModal, addLog, updateData, now, navigate, showToast, soundActive, setSoundActive, soundName, setSoundName }) {
   const bottles = todayLogs.filter(l => l.type === "bottle");
   const poops = todayLogs.filter(l => l.type === "poop");
   const wets = todayLogs.filter(l => l.type === "diaper" || (l.type === "poop" && l.combined));
