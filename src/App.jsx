@@ -666,7 +666,7 @@ export default function WieserBabyApp() {
           const info = SOUND_INFO[soundName] || SOUND_INFO.brown;
           return (
             <div style={{
-              position: "fixed", bottom: "calc(56px + env(safe-area-inset-bottom, 0px))",
+              position: "fixed", bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
               left: "50%", transform: "translateX(-50%)",
               width: "100%", maxWidth: 520, zIndex: 99,
               background: `linear-gradient(135deg, ${theme.accent}ee, ${theme.purple}ee)`,
@@ -1804,7 +1804,9 @@ function SleepSoundsModal({ theme, soundActive, setSoundActive, soundName, setSo
   const [sound, setSound]         = useState(() => SoundEngine.getCurrentSound() || soundName || "brown");
   const [timerMins, setTimerMins] = useState(0);
   const [elapsed, setElapsed]     = useState(() => SoundEngine.getElapsed());
-  const playing = soundActive;
+  // Local playing state — NOT derived from soundActive prop because the modal
+  // is stored in parent useState(null) and won't re-render when the prop changes.
+  const [playing, setPlaying]     = useState(() => SoundEngine.isPlaying());
   const intervalRef = useRef(null);
 
   // Tick elapsed while this modal is open — display only, no side effects
@@ -1842,21 +1844,25 @@ function SleepSoundsModal({ theme, soundActive, setSoundActive, soundName, setSo
     SoundEngine.start(sound, timerMins, () => {
       // Auto-stop callback (fires when timer expires)
       setSoundActive(false);
+      setPlaying(false);
     });
     setSoundActive(true);
     setSoundName(sound);
+    setPlaying(true);
     setElapsed(0);
   };
 
   const handleStop = () => {
     SoundEngine.stop();
     setSoundActive(false);
+    setSoundName(sound);
+    setPlaying(false);
     setElapsed(0);
   };
 
   const handleSoundChange = (id) => {
     if (playing) {
-      SoundEngine.start(id, timerMins, () => setSoundActive(false));
+      SoundEngine.start(id, timerMins, () => { setSoundActive(false); setPlaying(false); });
       setSoundName(id);
       setElapsed(0);
     }
