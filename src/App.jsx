@@ -2444,6 +2444,32 @@ function SettingsPage({ data, updateData, theme, showToast, navigate, activeBaby
         </div>
       )}
     </div>
+    {/* ── Share This App ── */}
+    <div style={{ background: theme.card, borderRadius: 20, padding: 20, border: `1px solid ${theme.border}` }}>
+      <SectionLabel theme={theme}>Share This App</SectionLabel>
+      <p style={{ fontSize: 13, color: theme.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+        Know someone who'd love Wieser Baby? Send them the link!
+      </p>
+      <button
+        onClick={() => {
+          const url = "https://wieserbaby.netlify.app";
+          const text = "Check out Wieser Baby — a free app for tracking feeding, sleep, diapers, milestones & more! 👶";
+          if (navigator.share) {
+            navigator.share({ title: "Wieser Baby", text, url }).catch(() => {});
+          } else {
+            navigator.clipboard?.writeText(`${text}\n${url}`).then(() => showToast("📋 Link copied!"));
+          }
+        }}
+        style={{
+          width: "100%", padding: "15px 16px", borderRadius: 14,
+          background: theme.accent, color: "#fff",
+          fontWeight: 800, fontSize: 16, border: "none",
+          cursor: "pointer", fontFamily: "'Nunito', sans-serif",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}>
+        📲 Share Wieser Baby
+      </button>
+    </div>
     <DataSection theme={theme} data={data} updateData={updateData} showToast={showToast} />
     <div style={{ textAlign: "center", padding: 20, color: theme.textMuted }}><p style={{ fontFamily: "'Fredoka'", fontSize: 16 }}><span style={{ color: theme.accent }}>Wieser</span> Baby</p><p style={{ fontSize: 12, marginTop: 4 }}>v{APP_VERSION}</p></div>
   </div>);
