@@ -198,6 +198,11 @@ export default function AuthScreen({ onSignedIn, theme }) {
           <GoogleLogo />
           Continue with Google
         </button>
+        {window.matchMedia("(display-mode: standalone)").matches && (
+          <p style={{ fontSize: 12, color: t.textMuted, textAlign: "center", lineHeight: 1.6, padding: "0 8px" }}>
+            💡 <strong>Tip:</strong> If Google sign-in loops back here, open the app in your browser first, sign in there, then return to this installed app — you'll be signed in automatically.
+          </p>
+        )}
 
         {/* Divider */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
