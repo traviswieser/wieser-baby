@@ -2723,17 +2723,59 @@ function EditLogModal({ theme, log, onSave, onClose, now }) {
 }
 
 function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModal, addLog, now }) {
-  const [fd, setFd] = useState(localDateStr());
+  const today = localDateStr();
+  const [preset, setPreset] = useState("today");
+  const [customStart, setCustomStart] = useState(today);
+  const [customEnd, setCustomEnd]   = useState(today);
   const [ft, setFt] = useState("all");
 
-  const logs = [...data.logs]
-    .filter(l => l.date === fd && (ft === "all" || l.type === ft))
-    .reverse();
+  // ── Date range from preset ──────────────────────────────────
+  const dateRange = (() => {
+    const d = new Date();
+    const fmt = (dt) => localDateStr(dt);
+    const offset = (n) => { const x = new Date(d); x.setDate(x.getDate() - n); return fmt(x); };
+    if (preset === "today")    return { start: today, end: today };
+    if (preset === "yesterday"){ const y = offset(1); return { start: y, end: y }; }
+    if (preset === "3days")    return { start: offset(2), end: today };
+    if (preset === "7days")    return { start: offset(6), end: today };
+    if (preset === "month")    return { start: offset(29), end: today };
+    return { start: customStart, end: customEnd };
+  })();
+
+  const inRange = (dateStr) => dateStr >= dateRange.start && dateStr <= dateRange.end;
+
+  const filteredLogs = [...data.logs]
+    .filter(l => inRange(l.date) && (ft === "all" || l.type === ft))
+    .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+
+  // ── Summary stats for the range ────────────────────────────
+  const rangeLogs = [...data.logs].filter(l => inRange(l.date));
+
+  const summary = {
+    bottleOz:    rangeLogs.filter(l => l.type === "bottle").reduce((s, l) => s + (parseFloat(l.amount) || 0), 0),
+    bottleCount: rangeLogs.filter(l => l.type === "bottle").length,
+    foodCal:     rangeLogs.filter(l => l.type === "food" && l.source !== "bottle").reduce((s, l) => s + (parseInt(l.calories) || 0), 0),
+    foodCount:   rangeLogs.filter(l => l.type === "food" && l.source !== "bottle").length,
+    sleepMins:   rangeLogs.filter(l => l.type === "sleep" && l.subtype === "woke_up").reduce((s, l) => s + (parseInt(l.durationMins) || 0), 0),
+    sleepCount:  rangeLogs.filter(l => l.type === "sleep" && l.subtype === "woke_up").length,
+    diapers:     rangeLogs.filter(l => l.type === "diaper" || l.type === "poop").length,
+  };
+
+  const fmtSleep = (mins) => mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}m` : `${mins}m`;
+
+  const PRESETS = [
+    { id: "today",     label: "Today" },
+    { id: "yesterday", label: "Yesterday" },
+    { id: "3days",     label: "3 Days" },
+    { id: "7days",     label: "7 Days" },
+    { id: "month",     label: "Month" },
+    { id: "custom",    label: "Custom" },
+  ];
 
   const logLabel = (l) => {
     if (l.type === "bottle") return `${l.amount} oz ${l.feedType || ""}`;
     if (l.type === "poop") return `${POOP_COLORS.find(c=>c.id===l.color)?.label || ""} / ${POOP_CONSISTENCIES.find(c=>c.id===l.consistency)?.label || ""}`;
-    if (l.type === "diaper") return "Wet diaper";  // combined handled by poop label
+    if (l.type === "diaper") return "Wet diaper";
     if (l.type === "sleep") return l.subtype === "woke_up"
       ? (l.durationMins >= 60 ? `Slept ${Math.floor((l.durationMins||0)/60)}h ${(l.durationMins||0)%60}m` : `Slept ${l.durationMins||0}m`)
       : "Fell asleep";
@@ -2759,38 +2801,91 @@ function HistoryPage({ data, theme, updateData, navigateBack, showToast, setModa
     );
   };
 
+  const t = theme;
+  const chipSt = (active) => ({
+    padding: "7px 14px", borderRadius: 20, fontWeight: 700, fontSize: 13,
+    border: `1.5px solid ${active ? t.accent : t.border}`,
+    background: active ? t.accentSoft : t.card,
+    color: active ? t.accent : t.textMuted,
+    cursor: "pointer", fontFamily: "'Nunito', sans-serif", whiteSpace: "nowrap",
+  });
+
   return (
     <div>
+      {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <button onClick={navigateBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: theme.text }}>←</button>
+        <button onClick={navigateBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: t.text }}>←</button>
         <h2 style={{ fontFamily: "'Fredoka', sans-serif", fontSize: 22 }}>📅 History</h2>
       </div>
-      <input type="date" value={fd} onChange={e => setFd(e.target.value)} style={{ ...inputStyle(theme), marginBottom: 10 }} />
+
+      {/* ── Preset chips ── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, overflowX: "auto", paddingBottom: 4 }}>
+        {PRESETS.map(p => (
+          <button key={p.id} onClick={() => setPreset(p.id)} style={chipSt(preset === p.id)}>{p.label}</button>
+        ))}
+      </div>
+
+      {/* ── Custom date pickers ── */}
+      {preset === "custom" && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+          <input type="date" value={customStart} max={customEnd}
+            onChange={e => setCustomStart(e.target.value)}
+            style={{ ...inputStyle(t), flex: 1 }} />
+          <span style={{ color: t.textMuted, fontWeight: 700, fontSize: 13 }}>→</span>
+          <input type="date" value={customEnd} min={customStart}
+            onChange={e => setCustomEnd(e.target.value)}
+            style={{ ...inputStyle(t), flex: 1 }} />
+        </div>
+      )}
+
+      {/* ── Summary cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+        {[
+          { icon: "🍼", label: "Bottle", line1: `${summary.bottleOz.toFixed(1)} oz`, line2: `${summary.bottleCount} feed${summary.bottleCount !== 1 ? "s" : ""}` },
+          { icon: "🍎", label: "Food",   line1: `${summary.foodCal} cal`,             line2: `${summary.foodCount} item${summary.foodCount !== 1 ? "s" : ""}` },
+          { icon: "😴", label: "Sleep",  line1: fmtSleep(summary.sleepMins),          line2: `${summary.sleepCount} nap${summary.sleepCount !== 1 ? "s" : ""}` },
+          { icon: "💧", label: "Diaper", line1: `${summary.diapers}`,                 line2: `change${summary.diapers !== 1 ? "s" : ""}` },
+        ].map(card => (
+          <div key={card.label} style={{
+            background: t.card, borderRadius: 16, padding: "14px 16px",
+            border: `1px solid ${t.border}`, textAlign: "center",
+          }}>
+            <div style={{ fontSize: 22, marginBottom: 4 }}>{card.icon}</div>
+            <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{card.label}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: t.accent, lineHeight: 1.1 }}>{card.line1}</div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{card.line2}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Type filter ── */}
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-        {["all","bottle","poop","diaper","sleep","food","medicine","note","teething"].map(t => (
-          <button key={t} className="tab-btn" onClick={() => setFt(t)}
-            style={{ background: ft === t ? theme.accentSoft : theme.card, border: `1px solid ${ft === t ? theme.accent : theme.border}`, borderRadius: 10, padding: "6px 12px", color: ft === t ? theme.accent : theme.textMuted, fontWeight: 700, fontSize: 11, textTransform: "capitalize" }}>
-            {t}
+        {["all","bottle","poop","diaper","sleep","food","medicine","note","teething"].map(type => (
+          <button key={type} onClick={() => setFt(type)}
+            style={{ background: ft === type ? t.accentSoft : t.card, border: `1px solid ${ft === type ? t.accent : t.border}`, borderRadius: 10, padding: "6px 12px", color: ft === type ? t.accent : t.textMuted, fontWeight: 700, fontSize: 11, textTransform: "capitalize", cursor: "pointer" }}>
+            {type}
           </button>
         ))}
       </div>
-      {logs.length === 0
-        ? <p style={{ color: theme.textMuted, textAlign: "center", padding: 30 }}>No logs for this day.</p>
-        : logs.map(l => (
-          <div key={l.id} style={{ background: theme.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${theme.border}`, display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+
+      {/* ── Log list ── */}
+      {filteredLogs.length === 0
+        ? <p style={{ color: t.textMuted, textAlign: "center", padding: 30 }}>No logs for this period.</p>
+        : filteredLogs.map(l => (
+          <div key={l.id} style={{ background: t.card, borderRadius: 14, padding: "12px 16px", border: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <span style={{ fontSize: 20, flexShrink: 0 }}>{logIcon(l.type)}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{logLabel(l)}</div>
-              <div style={{ fontSize: 11, color: theme.textMuted }}>{formatTime12(l.time)}</div>
+              <div style={{ fontSize: 11, color: t.textMuted }}>{l.date !== today ? l.date + " · " : ""}{formatTime12(l.time)}</div>
             </div>
             <button
               onClick={() => openEdit(l)}
-              style={{ background: theme.accentSoft, border: `1px solid ${theme.accent}40`, borderRadius: 8, padding: "6px 12px", color: theme.accent, fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+              style={{ background: t.accentSoft, border: `1px solid ${t.accent}40`, borderRadius: 8, padding: "6px 12px", color: t.accent, fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
               ✏️ Edit
             </button>
             <button
               onClick={() => { if (window.confirm("Delete this log?")) { updateData("logs", data.logs.filter(x => x.id !== l.id)); showToast("Deleted"); } }}
-              style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: theme.textMuted, flexShrink: 0, lineHeight: 1 }}>
+              style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: t.textMuted, flexShrink: 0, lineHeight: 1 }}>
               ✕
             </button>
           </div>
