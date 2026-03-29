@@ -52,27 +52,28 @@ export function getCurrentUser() {
 }
 
 export async function signInWithGoogle() {
-  // Standalone PWA mode (installed to home screen) has no window.opener,
-  // so popup auth can't post its result back. Use redirect in that case.
-  // For redirect to survive iOS/Android storage partitioning, set persistence
-  // to LOCAL (localStorage) before redirecting — it survives page unloads.
-  const isStandalone = window.matchMedia("(display-mode: standalone)").matches
-    || window.navigator.standalone === true;
+  // WHY POPUP INSTEAD OF REDIRECT IN PWA MODE:
+  // signInWithRedirect relies on a hidden cross-origin iframe (firebaseapp.com)
+  // to pass the auth result back to the app. Modern mobile browsers (Safari ITP,
+  // Chrome storage partitioning) block cross-origin iframe storage — so the
+  // result is silently lost and getRedirectResult() returns null, causing the
+  // sign-in loop. signInWithPopup avoids this entirely by communicating via
+  // postMessage from a popup window, which is not subject to the same restrictions.
+  //
+  // Android Chrome PWA: popup works perfectly in standalone mode.
+  // iOS Safari PWA: popups are blocked; caller detects this and shows a message.
+  // Desktop: popup has always worked fine.
 
-  if (isStandalone) {
-    await setPersistence(auth, browserLocalPersistence);
-    await signInWithRedirect(auth, googleProvider);
-    return null;
-  }
+  await setPersistence(auth, browserLocalPersistence);
 
-  // Browser tab: use popup (works on desktop and mobile browsers)
   try {
     const cred = await signInWithPopup(auth, googleProvider);
     return cred.user;
   } catch (err) {
     if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request") {
-      // Popup blocked — fall back to redirect with local persistence
-      await setPersistence(auth, browserLocalPersistence);
+      // Popup was blocked by the browser (common on iOS Safari PWA).
+      // Fall back to redirect — this works on desktop and Android browser tabs,
+      // but may still loop on iOS Safari PWA. The UI will show a tip for that case.
       await signInWithRedirect(auth, googleProvider);
       return null;
     }
@@ -82,9 +83,15 @@ export async function signInWithGoogle() {
 
 export async function checkRedirectResult() {
   try {
+    // If the user is already signed in from a previous session (localStorage
+    // persistence), return them immediately without a network round-trip.
+    if (auth.currentUser) {
+      console.log("checkRedirectResult: user already signed in", auth.currentUser.email);
+      return auth.currentUser;
+    }
     const r = await getRedirectResult(auth);
-    if (r?.user) console.log("checkRedirectResult: got user", r.user.email);
-    else console.log("checkRedirectResult: no redirect user. auth.currentUser=", auth.currentUser?.email ?? "null");
+    if (r?.user) console.log("checkRedirectResult: got redirect user", r.user.email);
+    else console.log("checkRedirectResult: no redirect result. auth.currentUser=", auth.currentUser?.email ?? "null");
     return r?.user ?? null;
   } catch (err) {
     // Re-throw so the caller can show the error on screen

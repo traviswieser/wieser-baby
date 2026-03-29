@@ -76,6 +76,11 @@ export default function AuthScreen({ onSignedIn, theme }) {
   const [showInstall, setShowInstall] = useState(false);
   const platform = detectPlatform();
 
+  // Detect iOS PWA specifically — Safari blocks popups in standalone mode,
+  // so Google sign-in won't work there. We show a targeted tip for this case.
+  const isIosPwa = window.navigator.standalone === true;
+  const isStandalonePwa = isIosPwa || window.matchMedia("(display-mode: standalone)").matches;
+
   // Catch Google redirect result on mount (mobile flow)
   useEffect(() => {
     checkRedirectResult().then((user) => {
@@ -198,9 +203,24 @@ export default function AuthScreen({ onSignedIn, theme }) {
           <GoogleLogo />
           Continue with Google
         </button>
-        {window.matchMedia("(display-mode: standalone)").matches && (
+        {isIosPwa && (
+          <div style={{
+            background: "rgba(251,188,5,0.1)", border: "1px solid rgba(251,188,5,0.35)",
+            borderRadius: 12, padding: "12px 16px",
+            fontSize: 13, color: t.text, lineHeight: 1.6,
+          }}>
+            <strong>⚠️ iOS Safari doesn't support Google sign-in in the installed app.</strong>
+            <br />
+            Two options:
+            <br />
+            • <strong>Use email/password</strong> instead (works perfectly in the app) — or —
+            <br />
+            • Open <strong>Safari</strong>, go to your app's URL, sign in with Google there, then come back to this icon. You'll be signed in automatically.
+          </div>
+        )}
+        {isStandalonePwa && !isIosPwa && (
           <p style={{ fontSize: 12, color: t.textMuted, textAlign: "center", lineHeight: 1.6, padding: "0 8px" }}>
-            💡 <strong>Tip:</strong> If Google sign-in loops back here, open the app in your browser first, sign in there, then return to this installed app — you'll be signed in automatically.
+            💡 A sign-in window will open. Complete it, then return here.
           </p>
         )}
 
